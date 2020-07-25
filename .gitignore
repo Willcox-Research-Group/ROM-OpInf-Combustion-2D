@@ -1,0 +1,27 @@
+# Data files
+*.dat
+*.lay
+*.h5
+*.tar
+*.zip
+*.csv
+
+# Documentation and logs
+*.pdf
+*.log
+
+# Figures and videos
+*.svg
+*.pdf
+*.ps
+*.eps
+*.jpeg
+*.png
+*.mp4
+*.gif
+figures/
+
+# Python extras
+.ipynb_checkpoints/
+__pycache__/
+
