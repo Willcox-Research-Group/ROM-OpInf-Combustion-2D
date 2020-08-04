@@ -2,8 +2,6 @@
 
 This document walks through the steps for downloading and processing the data from [\[3\]](#references), model learning with the `rom_operator_inference` Python package [\[4\]](#references), and postprocessing/visualizing results.
 
-<!--
-
 ## File Summary
 
 #### Utility Files
@@ -12,6 +10,8 @@ This document walks through the steps for downloading and processing the data fr
 - [`utils.py`](../utils.py): Utilities for logging and timing operations, loading and saving data, saving figures, and calculating ROM reconstruction errors.
 - [`chemistry_conversions.py`](../chemistry_conversions.py): Chemistry-related data conversions.
 - [`data_processing.py`](../data_processing.py): Tools for (un)lifting and (un)scaling data.
+
+<!--
 
 #### Main Files
 
