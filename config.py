@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 
 # CHANGE THIS LINE vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 
-BASE_FOLDER = "/storage/combustion_gems_2D" # Base folder for all data.
+BASE_FOLDER = ""                            # Base folder for all data.
 
 # CHANGE THIS LINE ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
