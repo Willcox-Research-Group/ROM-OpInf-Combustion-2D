@@ -3,23 +3,23 @@
 scaled snapshot training data and save the basis and the corresponding
 singular values.
 
-To access the resulting POD basis and the associated singular values,
-use utils.load_basis() or the following code.
-
->>> import h5py
->>> with h5py.File(<basis_path>, 'r') as hf:
-...     V = hf["V"][:]              # The POD basis (left singular vectors).
-...     svdvals = hf["svdvals"][:]  # The associated singular values.
-
-The <basis_path> can be obtained via config.basis_path().
-
 Examples
 --------
 # Use 10,000 snapshots to compute a rank-50 POD basis.
 $ python3 step2b_basis.py 10000 50
 
-# Use 15,000 snapshots to compute rank-50 and rank-100 POD bases.
-$ python3 step2b_basis.py 15000 50 100
+# Use 20,000 snapshots to compute rank-50 and rank-100 POD bases.
+$ python3 step2b_basis.py 20000 50 100
+
+Loading Results
+---------------
+>>> import utils
+>>> trainsize = 10000       # Number of snapshots used as training data.
+>>> num_modes = 44          # Number of POD modes.
+>>> V, svdvals = utils.load_basis(trainsize, num_modes)
+
+Command Line Arguments
+----------------------
 """
 import h5py
 import logging
@@ -38,7 +38,7 @@ def compute_and_save_pod_basis(trainsize, num_modes, training_data, scales):
     ----------
     trainsize : int
         Number of snapshots to use in computing the basis.
-    
+
     num_modes : list(int) or int
         Number of POD modes to compute.
 

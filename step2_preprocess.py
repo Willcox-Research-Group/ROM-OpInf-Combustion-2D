@@ -3,7 +3,7 @@
 
 1. Transform the GEMS training data to the learning variables and scale each
 variable to the intervals defined by config.SCALE_TO. Save the processed data
-(see also step2a_lift.py).
+(see also step2a_transform.py).
 
 2. Compute the POD basis (the dominant left singular vectors) of the lifted,
 scaled snapshot training data and save the basis and the corresponding singular
@@ -14,31 +14,9 @@ the columns of the POD basis V, compute velocity information for the projected
 snapshots, and save the projected data (see also step2c_project.py).
 
 These three steps can be performed separately with
-* step2a_lift.py,
+* step2a_transform.py,
 * step2b_basis.py, and
 * step2c_project.py, respectively.
-
-To access the resulting POD basis and the associated singular values,
-use utils.load_basis() or the following code.
-
->>> import h5py
->>> with h5py.File(<basis_path>, 'r') as hf:
-...     V = hf["V"][:]              # The POD basis (left singular vectors).
-...     svdvals = hf["svdvals"][:]  # The associated singular values.
-
-The <basis_path> can be obtained via config.basis_path().
-
-To access the resulting projected data, use utils.load_projected_data()
-or the following code.
-
->>> import h5py
->>> with h5py.File(<projected_data_path>, 'r') as hf:
-...     X_ = hf["data"][:]          # The projected snapshots.
-...     Xdot_ = hf["xdot"][:]       # The associated projected velocities.
-...     times = hf["time"][:]       # The time domain for the snapshots.
-...     scales = hf["scales"][:]    # Info on how the data was scaled.
-
-The <projected_data_path> can be obtained via config.projected_data_path().
 
 Examples
 --------
@@ -46,8 +24,20 @@ Examples
 $ python3 step2_preprocess.py 10000 24
 
 # Get training data from 15,000 snapshots and project it with r POD modes
-# for every integer r from 25 to 50
+# for every integer r from 25 through 50 (inclusive).
 $ python3 step2_preprocess.py 15000 25 50 --moderange
+
+Loading Results
+---------------
+>>> import utils
+>>> trainsize = 10000       # Number of snapshots used as training data.
+>>> num_modes = 44          # Number of POD modes.
+>>> X, t, scales = utils.load_scaled_data(trainsize)
+>>> V, svdvals = utils.load_basis(trainsize, num_modes)
+>>> X_, Xdot_, t, scales = utils.load_projected_data(trainsize, num_modes)
+
+Command Line Arguments
+----------------------
 """
 import os
 import h5py
@@ -59,7 +49,7 @@ import rom_operator_inference as roi
 import config
 import utils
 import data_processing as dproc
-import step2a_lift as step2a
+import step2a_transform as step2a
 import step2b_basis as step2b
 import step2c_project as step2c
 
@@ -119,7 +109,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__,
                         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} --help
-        python3 {__file__} TRAINSIZE MODES [...]"""
+        python3 {__file__} TRAINSIZE MODES [...] [--moderange]"""
     parser.add_argument("trainsize", type=int,
                         help="number of snapshots in the training data")
     parser.add_argument("modes", type=int, nargs='+',

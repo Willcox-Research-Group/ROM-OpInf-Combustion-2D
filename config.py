@@ -141,7 +141,7 @@ GEMS_STYLE = dict(linestyle="-",            # Line style for GEMS time traces.
                   label="GEMS")             # Line label for GEMS time traces.
 ROM_STYLE = dict(linestyle="--",            # Line style for ROM time traces.
                  color="C0",                # Line color for ROM time traces.
-                 label="ROM")               # Line style for ROM time traces.
+                 label="ROM")               # Line label for ROM time traces.
 
 # =============================================================================
 # DO NOT MODIFY ===============================================================

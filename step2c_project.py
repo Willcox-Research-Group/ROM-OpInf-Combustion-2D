@@ -3,29 +3,27 @@
 spanned by the columns of the POD basis V; compute velocity
 information for the projected snapshots; and save the projected data.
 
-To access the resulting projected data, use utils.load_projected_data()
-or the following code.
-
->>> import h5py
->>> with h5py.File(<projected_data_path>, 'r') as hf:
-...     X_ = hf["data"][:]          # The projected snapshots.
-...     Xdot_ = hf["xdot"][:]       # The associated projected velocities.
-...     times = hf["time"][:]       # The time domain for the snapshots.
-...     scales = hf["scales"][:]    # Info on how the data was scaled.
-
-The <projected_data_path> can be obtained via config.projected_data_path().
-
 Examples
 --------
 # Project 10,000 preprocessed snapshots to a 24-dimensional subspace.
 $ python3 step2c_project.py 10000 24
 
-# Project 15,000 preprocessed snapshots to 24- and 29-dimensional subspaces.
-$ python3 step2c_project.py 15000 24 29
+# Project 20,000 preprocessed snapshots to 24- and 29-dimensional subspaces.
+$ python3 step2c_project.py 20000 24 29
 
-# Project 20,000 preprocessed snapshots to an r-dimensional subspace
+# Project 30,000 preprocessed snapshots to an r-dimensional subspace
 # for each integer r from 17 through 30 (inclusive).
-$ python3 step2c_project.py 20000 17 30 --moderange
+$ python3 step2c_project.py 30000 17 30 --moderange
+
+Loading Results
+---------------
+>>> import utils
+>>> trainsize = 10000       # Number of snapshots used as training data.
+>>> num_modes = 44          # Number of POD modes.
+>>> X_, Xdot_, t, scales = utils.load_projected_data(trainsize, num_modes)
+
+Command Line Arguments
+----------------------
 """
 import h5py
 import logging
