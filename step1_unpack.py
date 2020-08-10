@@ -120,7 +120,7 @@ def _globalize_lock(l):
 
 def main(data_folder, overwrite=False):
     """Extract snapshot data, in parallel, from the .tar files in the
-    specified folder of the form from<first-snapshot>to<last-snapshot>.tar.
+    specified folder of the form Data_<first-snapshot>to<last-snapshot>.tar.
 
     Parameters
     ----------
@@ -144,7 +144,7 @@ def main(data_folder, overwrite=False):
         logging.warning(f"Grid file {source} not found!")
 
     # Locate and sort raw .tar files.
-    target_pattern = os.path.join(data_folder, "from*to*.tar")
+    target_pattern = os.path.join(data_folder, "Data_*to*.tar")
     tarfiles = sorted(glob.glob(target_pattern))
     if not tarfiles:
         raise FileNotFoundError(target_pattern)
@@ -152,10 +152,10 @@ def main(data_folder, overwrite=False):
     # Get the snapshot indices corresponding to each file from the file names.
     starts, stops = [], []
     for i,tfile in enumerate(tarfiles):
-        matches = re.findall(r"from(\d+)to(\d+).tar", tfile)
+        matches = re.findall(r"Data_(\d+)to(\d+).tar", tfile)
         if not matches:
             raise ValueError(f"file {tfile} not named with convention "
-                             "from<first-snapshot>to<last-snapshot>.tar")
+                             "Data_<first-snapshot>to<last-snapshot>.tar")
         start, stop = [int(d) for d in matches[0]]
         if i == 0:
             start0 = start  # Offset
