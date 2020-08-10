@@ -1,25 +1,23 @@
-# step2a_lift.py
+# step2a_transform.py
 """Transform the GEMS data to the learning variables and scale each variable
 to the intervals defined by config.SCALE_TO. Save the processed data.
-
-To access the resulting processed data, use utils.load_scaled_data()
-or the following code.
-
->>> import h5py
->>> with h5py.File(<scaled_data_path>, 'r') as hf:
-...     scaled_data = hf["data"][:] # The lifted, scaled snapshots.
-...     times = hf["time"][:]       # The associated time domain.
-...     scales = hf["scales"][:]    # Info on how the data is scaled.
-
-The <scaled_data_path> can be obtained via config.scaled_data_path().
 
 Examples
 --------
 # Transform and save 10,000 snapshots.
-$ python3 step2a_lift.py 10000
+$ python3 step2a_transform.py 10000
 
-# Transform and save sets of 10,000, 15,000, and 20,000 snapshots.
-$ python3 step2a_lift.py 10000 15000 20000
+# Transform and save sets of 10,000, 20,000, and 30,000 snapshots.
+$ python3 step2a_transform.py 10000 20000 30000
+
+Loading Results
+---------------
+>>> import utils
+>>> trainsize = 10000       # Number of snapshots used as training data.
+>>> X, t, scales = utils.load_scaled_data(trainsize)
+
+Command Line Arguments
+----------------------
 """
 import h5py
 import logging

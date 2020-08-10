@@ -2,13 +2,6 @@
 """Use projected data to learn reduced-order models via Operator Inference
 with optimal regularization parameter selection.
 
-To access the resulting ROMs, use utils.load_rom() or the following code.
-
->>> import rom_operator_inference as roi
->>> rom = roi.load_model(<rom_path>)
-
-The <rom_path> can be obtained via config.rom_path().
-
 Examples
 --------
 ## --save-all: save each specified model.
@@ -27,7 +20,7 @@ $ python3 step3_train.py 15000 --save-all
 $ python3 step3_train.py 20000 --save-all
                          --modes 24 --regularization 6e4 7e4
 
-# Use 10,000 projected snapshots to learn ROMs of dimension 17 through 30
+# Use 10,000 projected snapshots to learn ROMs of dimension 17 through 30,
 # each with regularization parameters of 6 x 10^4.
 $ python3 step3_train.py 10000 --save-all
                          --modes 17 30 --moderange --regularization 6e4
@@ -60,6 +53,17 @@ $ python3 step3_train.py 20000 --gridsearch
 $ python3 step3_train.py 10000 --minimize
                          --modes 22 --regularization 1e4 1e5
                          --testsize 60000 --margin 1.5
+
+Loading Results
+---------------
+>>> import utils
+>>> trainsize = 10000       # Number of snapshots used as training data.
+>>> num_modes = 44          # Number of POD modes.
+>>> reg = 1e4               # Regularization parameter for Operator Inference.
+>>> rom = utils.load_rom(trainsize, num_modes, reg)
+
+Command Line Arguments
+----------------------
 """
 import h5py
 import logging
@@ -341,7 +345,7 @@ def train_with_minimization(trainsize, num_modes, regs,
                 # Calculate integrated relative errors in the reduced space.
                 return roi.post.Lp_error(X_, x_rom[:,:trainsize],
                                                    t[:trainsize])[1]
-        
+
         opt_result = opt.minimize_scalar(training_error_from_rom,
                                          bounds=bounds, method="bounded")
         if opt_result.success and opt_result.fun != _MAXFUN:
@@ -389,10 +393,12 @@ if __name__ == "__main__":
                         help="number(s) of POD modes used to project data")
     parser.add_argument("--moderange", action="store_true",
                    help="if two modes given, treat them as min, max"
-                         " and train for each integer in [min, max].")
+                         " and train for each integer in [min, max]")
     parser.add_argument("-reg", "--regularization", type=float, nargs='+',
                         required=True,
-                        help="regularization parameter(s) for ROM training")
+                        help="regularization parameter(s) for ROM training "
+                             "or, with --minimize, upper and lower bounds "
+                             "for the regularization")
     parser.add_argument("--regrange", type=int, nargs='?', default=0,
                         help="if two regularizations given, treat them as min,"
                              " max and train with REGRANGE regularizations"
@@ -403,7 +409,7 @@ if __name__ == "__main__":
     parser.add_argument("-tau", "--margin", type=float, default=1.5,
                         help="percent that the POD coefficients of the "
                              "ROM simulation are allowed to deviate in "
-                             "magnitude from the training data.")
+                             "magnitude from the training data")
 
     # Parse arguments and mode and regularization options.
     args = parser.parse_args()

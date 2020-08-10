@@ -14,8 +14,25 @@ The GEMS data for this project collects snapshots of the following variables.
 * H2O mass fraction
 * CO2 mass fraction
 
-Each variable is discretized over a domain with 38523 degrees of freedom (DOF),
-so each snapshot has num_variables * DOF = 8*38523 = 308184 total entries.
+Each variable is discretized over a domain with 38,523 degrees of freedom
+(DOF), so each snapshot has 8 * 38,523 = 308,184 entries.
+
+Examples
+--------
+# Process the raw .tar data files that are placed in /storage/combustion/.
+$ python3 step1_unpack.py /storage/combustion
+
+# Process the raw .tar data files that are placed in the current directory,
+# overwriting the resulting HDF5 file if it already exists.
+$ python3 step1_unpack.py . --overwrite
+
+Loading Results
+---------------
+>>> import utils
+>>> gems_data, time_domain = utils.load_gems_data()
+
+Command Line Arguments
+----------------------
 """
 import os
 import re
@@ -103,7 +120,7 @@ def _globalize_lock(l):
 
 def main(data_folder, overwrite=False):
     """Extract snapshot data, in parallel, from the .tar files in the
-    specified folder of the form from<first-snapshot>to<last-snapshot>.tar.
+    specified folder of the form Data_<first-snapshot>to<last-snapshot>.tar.
 
     Parameters
     ----------
@@ -127,7 +144,7 @@ def main(data_folder, overwrite=False):
         logging.warning(f"Grid file {source} not found!")
 
     # Locate and sort raw .tar files.
-    target_pattern = os.path.join(data_folder, "from*to*.tar")
+    target_pattern = os.path.join(data_folder, "Data_*to*.tar")
     tarfiles = sorted(glob.glob(target_pattern))
     if not tarfiles:
         raise FileNotFoundError(target_pattern)
@@ -135,10 +152,10 @@ def main(data_folder, overwrite=False):
     # Get the snapshot indices corresponding to each file from the file names.
     starts, stops = [], []
     for i,tfile in enumerate(tarfiles):
-        matches = re.findall(r"from(\d+)to(\d+).tar", tfile)
+        matches = re.findall(r"Data_(\d+)to(\d+).tar", tfile)
         if not matches:
             raise ValueError(f"file {tfile} not named with convention "
-                             "from<first-snapshot>to<last-snapshot>.tar")
+                             "Data_<first-snapshot>to<last-snapshot>.tar")
         start, stop = [int(d) for d in matches[0]]
         if i == 0:
             start0 = start  # Offset
@@ -175,7 +192,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__,
                         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} --help
-        python3 {__file__} DATAFOLDER"""
+        python3 {__file__} DATAFOLDER [--overwrite]"""
     parser.add_argument("datafolder", type=str,
                         help="the folder containing the raw .tar data files")
     parser.add_argument("--overwrite", action="store_true",
