@@ -114,11 +114,11 @@ def load_gems_data(rows=None, cols=None):
 
     Parameters
     ----------
-    rows : int, slice, or one-dimensional ndarray of integer indices
+    rows : int, slice, or (nrows,) ndarray of integer indices
         Which rows (spatial locations) to extract from the data (default all).
         If an integer, extract the first `rows` rows.
 
-    cols : int, slice, or one-dimensional ndarray of integer indices
+    cols : int or slice
         Which columns (temporal points) to extract from the data (default all).
         If an integer, extract the first `cols` columns.
 
@@ -133,21 +133,14 @@ def load_gems_data(rows=None, cols=None):
     # Locate the data.
     data_path = _checkexists(config.gems_data_path())
 
-    # Ensure data is loaded in ascending index order (HDF5 requirement).
-    if isinstance(rows, np.ndarray):
-        if isinstance(cols, np.ndarray):
-            raise ValueError("only one of `rows` and `cols` can be NumPy array")
-        roworder = np.argsort(rows)
-        rows = rows.copy()[roworder]
-        oldroworder = np.argsort(roworder)
+    # Ensure rows are loaded in ascending index order (HDF5 requirement).
+    if isinstance(rows, (np.ndarray, list)):
+        row_order = np.argsort(rows)
+        rows = np.array(rows, copy=True)[row_order]
+        old_row_order = np.argsort(row_order)
     elif np.isscalar(rows) or rows is None:
         rows = slice(None, rows)
-
-    if isinstance(cols, np.ndarray):
-        colorder = np.argsort(cols)
-        cols = cols.copy()[colorder]
-        oldcolorder = np.argsort(colorder)
-    elif np.isscalar(cols) or cols is None:
+    if np.isscalar(cols) or cols is None:
         cols = slice(None, cols)
 
     # Extract the data.
@@ -160,12 +153,9 @@ def load_gems_data(rows=None, cols=None):
             gems_data = hf["data"][rows,cols]
             time_domain = hf["time"][cols]
 
-    # Restore the initial ordering if needed.
+    # Restore row ordering if needed.
     if isinstance(rows, np.ndarray):
-        gems_data = gems_data[oldroworder,:]
-    elif isinstance(cols, np.ndarray):
-        gems_data = gems_data[:,oldcolorder]
-        time_domain = time_domain[oldcolorder]
+        gems_data = gems_data[old_row_order,:]
 
     return gems_data, time_domain
 
@@ -223,19 +213,16 @@ def load_scaled_data(trainsize):
     # Extract the data.
     with timed_block(f"Loading lifted, scaled snapshot data from {data_path}"):
         with h5py.File(data_path, 'r') as hf:
-            X = hf["data"][:,:]
-            time_domain = hf["time"][:]
-            scales = hf["scales"][:,:]
+            # Check data shapes.
+            if hf["data"].shape != (config.NUM_ROMVARS*config.DOF, trainsize):
+                raise RuntimeError(f"data set 'data' has incorrect shape")
+            if hf["time"].shape != (trainsize,):
+                raise RuntimeError(f"data set 'time' has incorrect shape")
+            if hf["scales"].shape != (config.NUM_ROMVARS, 4):
+                raise RuntimeError(f"data set 'scales' has incorrect shape")
 
-        # Check data shapes.
-        if X.shape[1] != trainsize:
-            raise RuntimeError(f"data should have exactly {X.shape[1]} columns")
-        if time_domain.shape != (trainsize,):
-            raise RuntimeError(f"time domain not of shape {(trainsize,)}")
-        if scales.shape != (config.NUM_ROMVARS, 4):
-            raise RuntimeError(f"scales not of shape {(config.NUM_ROMVARS,4)}")
-
-    return X, time_domain, scales
+            # Load and return the data.
+            return hf["data"][:,:], hf["time"][:], hf["scales"][:,:]
 
 
 def load_basis(trainsize, rmax):
@@ -266,14 +253,13 @@ def load_basis(trainsize, rmax):
     # Extract the data.
     with timed_block(f"Loading POD basis from {data_path}"):
         with h5py.File(data_path, 'r') as hf:
-            V = hf["V"][:,:rmax]
-            svdvals = hf["svdvals"][:rmax]
+            # Check data shapes.
+            if hf["V"].shape[1] < rmax:
+                raise RuntimeError(f"data set 'V' has fewer than "
+                                   f"{rmax} columns")
 
-        # Check that there are the right number of columns (retained modes).
-        ncols = V.shape[1]
-        if ncols < rmax:
-            raise RuntimeError(f"basis should have at least {ncols} columns")
-        return V, svdvals
+            # Load and return the data.
+            return hf["V"][:,:rmax], hf["svdvals"][:rmax]
 
 
 def load_projected_data(trainsize, num_modes):
@@ -306,25 +292,22 @@ def load_projected_data(trainsize, num_modes):
     data_path = _checkexists(config.projected_data_path(trainsize, num_modes))
 
     # Extract the data.
-    _shape = (num_modes, trainsize)
+    _data_shape = (num_modes, trainsize)
     with timed_block(f"Loading projected training data from {data_path}"):
         with h5py.File(data_path, 'r') as hf:
-            X_ = hf["data"][:,:]
-            Xdot_ = hf["xdot"][:,:]
-            time_domain = hf["time"][:]
-            scales = hf["scales"][:,:]
 
-        # Check data shapes.
-        if X_.shape != _shape:
-            raise RuntimeError(f"x data not of shape {_shape}")
-        if Xdot_.shape != _shape:
-            raise RuntimeError(f"xdot data not of shape {_shape}")
-        if time_domain.shape != (_shape[1],):
-            raise RuntimeError(f"time domain not of shape {(_shape[1],)}")
-        if scales.shape != (config.NUM_ROMVARS, 4):
-            raise RuntimeError(f"scales not of shape {(config.NUM_ROMVARS,4)}")
+            # Check data shapes.
+            if hf["data"].shape != _data_shape:
+                raise RuntimeError(f"data set 'data' has incorrect shape")
+            if hf["xdot"].shape != _data_shape:
+                raise RuntimeError(f"data set 'xdot' has incorrect shape")
+            if hf["time"].shape != (trainsize,):
+                raise RuntimeError(f"data set 'time' has incorrect shape")
+            if hf["scales"].shape != (config.NUM_ROMVARS, 4):
+                raise RuntimeError(f"data set 'scales' has incorrect shape")
 
-    return X_, Xdot_, time_domain, scales
+            return hf["data"][:,:], hf["xdot"][:,:], \
+                   hf["time"][:], hf["scales"][:,:]
 
 
 def load_rom(trainsize, num_modes, reg):
@@ -490,16 +473,10 @@ def load_statistical_features(keys, k=None):
     features = {}
     with timed_block(f"Loading statistical features from {data_path}"):
         with h5py.File(data_path, 'r') as hf:
-            for key in keys:
-                features[key] = hf[key][k]
-            t = hf["time"][k]
-
-        # Check data shapes.
-        for key in keys:
-            if features[key].shape != t.shape:
-                raise RuntimeError(f"feature {key} not of shape {t.shape}")
-
-    return (features[keys[0]], t) if len(keys) == 1 else (features, t)
+            if len(keys) == 1:
+                return hf[keys[0]][k], hf["time"][k]
+            else:
+                return {key: hf[key][k] for key in keys}, hf["time"][k]
 
 
 # Figure saving ===============================================================
