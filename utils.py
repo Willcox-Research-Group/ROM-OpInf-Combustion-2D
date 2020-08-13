@@ -1,7 +1,5 @@
 # utils.py
-"""Utilities for logging and timing operations, loading and saving data,
-saving figures, and calculating ROM reconstruction errors.
-"""
+"""Utilities for logging, timing, loading, and saving."""
 import os
 import re
 import sys
@@ -483,23 +481,7 @@ def load_statistical_features(keys, k=None):
 def save_figure(figname):
     """Save the current matplotlib figure to the figures folder."""
     save_path = os.path.join(config.figures_path(), figname)
-    # plt.show() # Uncomment to display figure in terminal before closing.
+    # plt.show() # Uncomment to display figure before saving.
     with timed_block(f"Saving {save_path}"):
         plt.savefig(save_path, bbox_inches="tight", dpi=1200)
         plt.close(plt.gcf())
-
-
-# Error calculations ==========================================================
-
-def mean_relative_error(x, y):
-    """Compute the mean relative error
-    between a 'true' vector `x` and an approximation `y`.
-    """
-    return np.mean(np.abs(x - y) / np.abs(x))
-
-
-def mean_normalized_absolute_error(x, y):
-    """Compute the mean normalized absolute error
-    between a 'true' vector `x` and an approximation `y`.
-    """
-    return np.mean(np.abs(x - y) / np.max(np.abs(x)))
