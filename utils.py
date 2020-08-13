@@ -225,7 +225,7 @@ def load_scaled_data(trainsize):
             return hf["data"][:,:], hf["time"][:], hf["scales"][:,:]
 
 
-def load_basis(trainsize, rmax):
+def load_basis(trainsize, r):
     """Load a POD basis and associated singular values.
 
     Parameters
@@ -233,20 +233,20 @@ def load_basis(trainsize, rmax):
     trainsize : int
         The number of snapshots used when the SVD was computed.
 
-    rmax : int
+    r : int
         The number of left singular vectors/values to load.
 
     Returns
     -------
-    V : (NUM_ROMVARS*DOF,rmax) ndarray
-        The POD basis of rank `rmax` (the first `rmax` left singular vectors).
+    V : (NUM_ROMVARS*DOF,r) ndarray
+        The POD basis of rank `r` (the first `r` left singular vectors).
 
-    svdvals : (rmax,) ndarray
-        The first `rmax` singular values.
+    svdvals : (r,) ndarray
+        The first `r` singular values.
     """
     # Locate the data.
     try:
-        data_path = config.smallest_basis_path(trainsize, rmax)
+        data_path = config.smallest_basis_path(trainsize, r)
     except FileNotFoundError as e:
         raise DataNotFoundError(e) from e
 
@@ -254,12 +254,11 @@ def load_basis(trainsize, rmax):
     with timed_block(f"Loading POD basis from {data_path}"):
         with h5py.File(data_path, 'r') as hf:
             # Check data shapes.
-            if hf["V"].shape[1] < rmax:
-                raise RuntimeError(f"data set 'V' has fewer than "
-                                   f"{rmax} columns")
+            if hf["V"].shape[1] < r:
+                raise RuntimeError(f"data set 'V' has fewer than {r} columns")
 
             # Load and return the data.
-            return hf["V"][:,:rmax], hf["svdvals"][:rmax]
+            return hf["V"][:,:r], hf["svdvals"][:r]
 
 
 def load_projected_data(trainsize, num_modes):
