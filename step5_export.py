@@ -105,9 +105,7 @@ def main(timeindices, variables=None, snaptype=["gems", "rom", "error"],
     utils.reset_logger(trainsize)
 
     # Parse parameters.
-    if isinstance(timeindices, int):
-        timeindices = [timeindices]
-    timeindices = np.sort(timeindices)
+    timeindices = np.sort(np.atleast_1d(timeindices))
     simtime = timeindices.max()
     t = utils.load_time_domain(simtime+1)
 
@@ -234,7 +232,8 @@ if __name__ == '__main__':
                         help="which snapshot types to save (gems, rom, error)")
     parser.add_argument("-idx", "--timeindex", type=int, nargs='*',
                         default=list(range(0,60100,100)),
-                        help="snapshot index for basis vs error plots")
+                        help="indices of snapshots to save "
+                             "(default every 100th snapshot)")
     parser.add_argument("-vars", "--variables", type=str, nargs='*',
                         default=config.ROM_VARIABLES,
                         help="variables to save, a subset of "
@@ -245,7 +244,7 @@ if __name__ == '__main__':
     parser.add_argument("-r", "--modes", type=int, nargs='?',
                         help="ROM dimension (number of retained POD modes)")
     parser.add_argument("-reg", "--regularization", type=float, nargs='?',
-                        help="regularization factor used in the ROM training")
+                        help="regularization parameter in the ROM training")
 
     # Do the main routine.
     args = parser.parse_args()
