@@ -278,6 +278,7 @@ for d,label in zip([VARTITLES, VARUNITS], ["VARTITLES", "VARUNITS"]):
 # Check that the base folder exists.
 if not os.path.exists(BASE_FOLDER):
     raise NotADirectoryError(BASE_FOLDER + " (set config.BASE_FOLDER)")
+BASE_FOLDER = os.path.abspath(BASE_FOLDER)
 
 
 # Initialize default logger ---------------------------------------------------
