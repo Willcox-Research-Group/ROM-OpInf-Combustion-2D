@@ -211,6 +211,7 @@ if __name__ == '__main__':
                         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} --help
         python3 {__file__} DATAFOLDER [--overwrite] [--serial]"""
+
     parser.add_argument("datafolder", type=str,
                         help="the folder containing the raw .tar data files")
     parser.add_argument("--overwrite", action="store_true",
