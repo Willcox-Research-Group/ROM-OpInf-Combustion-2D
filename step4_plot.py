@@ -33,7 +33,9 @@ import utils
 import data_processing as dproc
 
 
-def simulate_rom(trainsize, r, reg):
+# Helper functions ============================================================
+
+def simulate_rom(trainsize, r, reg, steps=None):
     """Load everything needed to simulate a given ROM, simulate the ROM,
     and return the simulation results and everything needed to reconstruct
     the results in the original high-dimensional space.
@@ -51,6 +53,9 @@ def simulate_rom(trainsize, r, reg):
     reg : float
         Regularization parameter used to train the ROM.
 
+    steps : int or None
+        Number of time steps to simulate the ROM.
+
     Returns
     -------
     t : (nt,) ndarray
@@ -67,7 +72,7 @@ def simulate_rom(trainsize, r, reg):
         Prediction results from the ROM.
     """
     # Load the time domain, basis, initial conditions, and trained ROM.
-    t = utils.load_time_domain()
+    t = utils.load_time_domain(steps)
     V, _ = utils.load_basis(trainsize, r)
     X_, _, _, scales = utils.load_projected_data(trainsize, r)
     rom = utils.load_rom(trainsize, r, reg)
@@ -79,6 +84,74 @@ def simulate_rom(trainsize, r, reg):
 
     return t, V, scales, x_rom
 
+
+def get_traces(locs, data, V=None, scales=None):
+    """Reconstruct time traces from data, unprojecting and unscaling if needed.
+
+    Parameters
+    ----------
+    locs : (l,nt) ndarray
+        Index locations for the time traces to extract.
+
+    data : (r,nt) or (config.DOF*config.NUM_ROMVARS,nt) ndarray
+        Data from which to extract the time traces, either the output of a ROM
+        or a high-dimensional data set.
+
+    V : (config.DOF*config.NUM_ROMVARS,r) ndarray or None
+        Rank-r POD basis. Only needed if `data` is low-dimensional ROM output.
+
+    scales : (config.NUM_ROMVARS,4) ndarray or None
+        Information for how the data was scaled (see data_processing.scale()).
+        Only needed if `data` is low-dimensional ROM output.
+
+    Returns
+    -------
+    traces : (l,nt) ndarray
+        The specified time traces.
+    """
+    # TODO: input shape checking
+    if V is not None and scales is not None:
+        return dproc.unscale(V[locs] @ data, scales)
+    else:
+        return data[locs]
+
+
+def get_feature(key, data, V=None, scales=None):
+    """Reconstruct a statistical feature from data, unprojecting and
+    unscaling if needed.
+
+    Parameters
+    ----------
+    key : str
+        Which statistical feature to calculate (T_mean, CH4_sum, etc.)
+
+    data : (r,nt) or (config.DOF*config.NUM_ROMVARS,nt) ndarray
+        Data from which to extract the features, either the output of a ROM
+        or a high-dimensional data set.
+
+    V : (config.DOF*config.NUM_ROMVARS,r) ndarray or None
+        Rank-r POD basis. Only needed if data is low-dimensional ROM output.
+
+    scales : (config.NUM_ROMVARS,4) ndarray or None
+        Information for how the data was scaled (see data_processing.scale()).
+        Only needed if `data` is low-dimensional ROM output.
+
+    Returns
+    -------
+    feature : (nt,) ndarray
+        The specified statistical feature.
+    """
+    # TODO: input shape checking
+    var, action = key.split('_')
+    print(f"{action}({var})", end='..', flush=True)
+    if V is not None and scales is not None:
+        variable = dproc.unscale(dproc.getvar(var, V) @ data, scales, var)
+    else:
+        variable = dproc.getvar(var, data)
+    return eval(f"variable.{action}(axis=0)")
+
+
+# Plot routines ===============================================================
 
 def time_traces(trainsize, r, reg, elems):
     """Plot the time trace of each variable in the original data at the monitor
@@ -215,18 +288,16 @@ def statistical_features(trainsize, r, reg):
 
     # Load and simulate the ROM.
     t, V, scales, x_rom = simulate_rom(trainsize, r, reg)
-    
+
     # Initialize the figure.
     fig, axes = plt.subplots(keys.shape[0], keys.shape[1],
                              figsize=(9,6), sharex=True)
-    
+
     # Calculate and plot the results.
     for ax,key in zip(axes.flat, keys.flat):
+        with utils.timed_block(f"Reconstructing"):
+            feature_rom = get_feature(key, x_rom, V, scales)
         ax.plot(t, feature_gems[key], lw=1, **config.GEMS_STYLE)
-        var, action = key.split('_')
-        with utils.timed_block(f"Reconstructing {action}({var})"):
-            x_rec = dproc.unscale(dproc.getvar(var, V) @ x_rom, scales, var)
-            feature_rom = eval(f"x_rec.{action}(axis=0)")
         ax.plot(t[:x_rom.shape[1]], feature_rom, lw=1, **config.ROM_STYLE)
         ax.axvline(t[trainsize], color='k')
         ax.set_ylabel(config.VARLABELS[var])
@@ -278,12 +349,15 @@ def main(trainsize, r, reg, elems,
 
     # Time traces (single ROM, several monitoring locations).
     if plotTimeTrace:
-        logging.info("PLOTTING TIME TRACES")
+        logging.info("TIME TRACES")
         time_traces(trainsize, r, reg, elems)
 
     # Statistical features (single ROM, several features).
     if plotStatisticalFeatures:
-        logging.info("PLOTTING STATISTICAL FEATURES")
+        logging.info("STATISTICAL FEATURES")
+        # Compute GEMS features if needed (only done once).
+        if not os.path.isfile(config.statistical_features_path()):
+            save_statistical_features()
         statistical_features(trainsize, r, reg)
 
 
