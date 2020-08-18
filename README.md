@@ -11,6 +11,10 @@ It is the source code for [\[1\]](#references) and can be used to reproduce the 
 
 [**See the wiki**](../../wiki) for details on the problem statement, instructions for using this repository, and visual results.
 
+<p align="center">
+    <img src="https://drive.google.com/uc?export=view&id=1TbIfBQW-YYXVydBFC0McJaSFjkvaeLvA" width="700">
+</p>
+
 ---
 
 **Contributors**:
