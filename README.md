@@ -10,7 +10,7 @@
 This repository is an extensive example of the non-intrusive, data-driven Operator Inference procedure for reduced-order modeling applied to a two-dimensional combustion problem.
 It is the source code for [\[1\]](#references) and can be used to reproduce the results of [\[2\]](#references).
 
-[**See the wiki**](https://github.com/Willcox-Research-Group/ROM-OpInf-Combustion-2D/wiki) for details on the problem statement, instructions for using this repository, and visual results.
+[**See the Wiki for details on the problem statement, instructions for using this repository, and visual results.**](https://github.com/Willcox-Research-Group/ROM-OpInf-Combustion-2D/wiki)
 
 <p align="center">
     <img src="https://drive.google.com/uc?export=view&id=1TbIfBQW-YYXVydBFC0McJaSFjkvaeLvA" width="700">
