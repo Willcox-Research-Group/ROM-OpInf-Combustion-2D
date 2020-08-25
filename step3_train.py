@@ -415,7 +415,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.moderange and len(args.modes) == 2:
         args.modes = list(range(args.modes[0], args.modes[1]+1))
-    if args.regrange and len(args.regularization) == 2:
+    if args.regrange and len(args.regularization) == 2 and not args.minimize:
         args.regularization = np.logspace(np.log10(args.regularization[0]),
                                           np.log10(args.regularization[1]),
                                           args.regrange)

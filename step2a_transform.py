@@ -69,7 +69,7 @@ def scale_and_save_data(trainsize, lifted_data, time_domain):
         The time domain corresponding to the lifted snapshots.
     """
     # Scale the learning variables to the bounds in config.SCALE_TO.
-    with utils.timed_block(f"Shifting {trainsize:d} lifted snapshots "
+    with utils.timed_block(f"Scaling {trainsize:d} lifted snapshots "
                            f"(by variable) to bounds in config.SCALE_TO"):
         scaled_data, scales = dproc.scale(lifted_data[:,:trainsize].copy())
 
