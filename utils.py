@@ -343,6 +343,8 @@ def load_rom(trainsize, num_modes, reg):
     if rom.r != num_modes:
         raise RuntimeError(f"rom.r = {rom.r} != {num_modes}")
 
+    rom.trainsize = trainsize
+    rom.reg = reg
     return rom
 
 
