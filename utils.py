@@ -241,6 +241,9 @@ def load_basis(trainsize, r):
 
     svdvals : (r,) ndarray
         The first `r` singular values.
+
+    scales : (NUM_ROMVARS,4) ndarray
+        The min/max factors used to scale the variables before projecting.
     """
     # Locate the data.
     try:
@@ -256,7 +259,7 @@ def load_basis(trainsize, r):
                 raise RuntimeError(f"data set 'V' has fewer than {r} columns")
 
             # Load and return the data.
-            return hf["V"][:,:r], hf["svdvals"][:r]
+            return hf["V"][:,:r], hf["svdvals"][:r], hf["scales"][:]
 
 
 def load_projected_data(trainsize, num_modes):
@@ -427,7 +430,7 @@ def load_all_roms_reg(trainsize, reg):
     return rs, roms
 
 
-def load_statistical_features(keys, k=None):
+def load_spatial_statistics(keys, k=None):
     """Load statistical features of the lifted data, computed over the
     spatial domain at each point in time.
 
@@ -441,7 +444,7 @@ def load_statistical_features(keys, k=None):
         * {var}_std : standard deviation of variable var
         * {var}_mean : mean of variable var
         Here var is a member of config.ROM_VARIABLES. Examples:
-        * "T_mean" -> mean temperature
+        * "T_mean" -> spatially averaged temperature
         * "vx_min" -> minimum x-velocity
         * "CH4_sum" -> methane molar concentration integral
 
@@ -469,13 +472,50 @@ def load_statistical_features(keys, k=None):
         k = slice(None, k)
 
     # Extract the data.
-    features = {}
     with timed_block(f"Loading statistical features from {data_path}"):
         with h5py.File(data_path, 'r') as hf:
             if len(keys) == 1:
-                return hf[keys[0]][k], hf["time"][k]
-            else:
-                return {key: hf[key][k] for key in keys}, hf["time"][k]
+                return hf[f"space/{keys[0]}"][k], hf["t"][k]
+            return {key: hf[f"space/{key}"][k] for key in keys}, hf["t"][k]
+
+
+def load_temporal_statistics(keys):
+    """Load statistical features of the lifted data, computed over the
+    temporal domain at each spatial point.
+
+    Parameters
+    ----------
+    keys : list(str)
+        Which data set(s) to load. Options:
+        * {var}_min : minimum of variable var
+        * {var}_max : maximum of variable var
+        * {var}_sum : sum (integral) of variable var
+        * {var}_std : standard deviation of variable var
+        * {var}_mean : mean of variable var
+        Here var is a member of config.ROM_VARIABLES. Examples:
+        * "T_mean" -> time-averaged temperature
+        * "vx_min" -> minimum x-velocity
+        * "CH4_sum" -> methane molar concentration time integral
+
+    Returns
+    -------
+    features : dict(str -> (N,) ndarray) or (N,) ndarray
+        Dictionary of statistical feature arrays with keys `keys`.
+        If only one key is given, return the actual array, not a dict.
+    """
+    # Locate the data.
+    data_path = _checkexists(config.statistical_features_path())
+
+    # Parse arguments.
+    if isinstance(keys, str):
+        keys = [keys]
+
+    # Extract the data.
+    with timed_block(f"Loading statistical features from {data_path}"):
+        with h5py.File(data_path, 'r') as hf:
+            if len(keys) == 1:
+                return hf[f"time/{keys[0]}"][:]
+            return {key: hf[f"time/{key}"][:] for key in keys}
 
 
 # Figure saving ===============================================================

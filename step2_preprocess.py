@@ -33,8 +33,8 @@ Loading Results
 >>> trainsize = 10000       # Number of snapshots used as training data.
 >>> num_modes = 44          # Number of POD modes.
 >>> X, t, scales = utils.load_scaled_data(trainsize)
->>> V, svdvals = utils.load_basis(trainsize, num_modes)
->>> X_, Xdot_, t, scales = utils.load_projected_data(trainsize, num_modes)
+>>> V, svdvals, scales = utils.load_basis(trainsize, num_modes)
+>>> X_, Xdot_, t = utils.load_projected_data(trainsize, num_modes)
 
 Command Line Arguments
 ----------------------
@@ -90,7 +90,7 @@ def main(trainsize, num_modes):
     # STEP 2B: Get the POD basis from the lifted, scaled data -----------------
     try:
         # Attempt to load existing SVD data.
-        V, _ = utils.load_basis(trainsize, max(num_modes))
+        V, _, scales = utils.load_basis(trainsize, max(num_modes))
 
     except utils.DataNotFoundError:
         # Compute and save the (randomized) SVD from the training data.
@@ -99,7 +99,7 @@ def main(trainsize, num_modes):
 
     # STEP 2C: Project data to the appropriate subspace -----------------------
     for r in num_modes:
-        step2c.project_and_save_data(trainsize, r, X, time_domain, scales, V)
+        step2c.project_and_save_data(trainsize, r, X, time_domain, V)
 
 
 # =============================================================================

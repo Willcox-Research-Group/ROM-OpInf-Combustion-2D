@@ -20,7 +20,7 @@ Loading Results
 >>> import utils
 >>> trainsize = 10000       # Number of snapshots used as training data.
 >>> num_modes = 44          # Number of POD modes.
->>> X_, Xdot_, t, scales = utils.load_projected_data(trainsize, num_modes)
+>>> X_, Xdot_, t = utils.load_projected_data(trainsize, num_modes)
 
 Command Line Arguments
 ----------------------
@@ -35,7 +35,7 @@ import config
 import utils
 
 
-def project_and_save_data(trainsize, r, X, time_domain, scales, V):
+def project_and_save_data(trainsize, r, X, time_domain, V):
     """Project preprocessed snapshots to a low-dimensional subspace.
 
     Parameters
@@ -51,9 +51,6 @@ def project_and_save_data(trainsize, r, X, time_domain, scales, V):
 
     time_domain : (trainsize,) ndarray
         Time domain corresponding to the snapshots.
-
-    scales : (NUM_ROMVARS,2) ndarray
-        Info on how the snapshot data was scaled.
 
     V : (NUM_ROMVARS*DOF,r) ndarray
         POD basis of rank at least r.
@@ -90,7 +87,6 @@ def project_and_save_data(trainsize, r, X, time_domain, scales, V):
             hf.create_dataset("data", data=X_)
             hf.create_dataset("xdot", data=Xdot_)
             hf.create_dataset("time", data=time_domain)
-            hf.create_dataset("scales", data=scales)
     logging.info(f"Projected data saved to {save_path}.\n")
 
     return X_, Xdot_
@@ -121,14 +117,14 @@ def main(trainsize, num_modes):
         num_modes = [int(num_modes)]
 
     # Load lifted, scaled snapshot data.
-    X, time_domain, scales = utils.load_scaled_data(trainsize)
+    X, time_domain, _ = utils.load_scaled_data(trainsize)
 
     # Load the POD basis.
-    V, _ = utils.load_basis(trainsize, max(num_modes))
+    V, _, _ = utils.load_basis(trainsize, max(num_modes))
 
     # Project and save the data for each number of POD modes.
     for r in num_modes:
-        project_and_save_data(trainsize, r, X, time_domain, scales, V)
+        project_and_save_data(trainsize, r, X, time_domain, V)
 
 
 # =============================================================================

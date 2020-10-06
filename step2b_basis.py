@@ -1,7 +1,7 @@
 # step2b_basis.py
 """Compute the POD basis (the dominant left singular vectors) of the lifted,
-scaled snapshot training data and save the basis and the corresponding
-singular values.
+scaled snapshot training data. Save the basis, the corresponding singular
+values, and information for how the data was scaled.
 
 Examples
 --------
@@ -16,7 +16,7 @@ Loading Results
 >>> import utils
 >>> trainsize = 10000       # Number of snapshots used as training data.
 >>> num_modes = 44          # Number of POD modes.
->>> V, svdvals = utils.load_basis(trainsize, num_modes)
+>>> V, svdvals, scales = utils.load_basis(trainsize, num_modes)
 
 Command Line Arguments
 ----------------------
@@ -77,6 +77,7 @@ def compute_and_save_pod_basis(trainsize, num_modes, training_data, scales):
             with h5py.File(save_path, 'w') as hf:
                 hf.create_dataset("V", data=V[:,:r])
                 hf.create_dataset("svdvals", data=svdvals[:r])
+                hf.create_dataset("scales", data=scales)
         logging.info(f"POD basis of rank {r} saved to {save_path}.\n")
 
     return V, svdvals

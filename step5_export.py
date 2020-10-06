@@ -151,10 +151,10 @@ def main(timeindices, variables=None, snaptype=["gems", "rom", "error"],
     # Simulate ROM if needed.
     if ("rom" in snaptype) or ("error" in snaptype):
         # Load the SVD data.
-        V, _ = utils.load_basis(trainsize, r)
+        V, _, scales = utils.load_basis(trainsize, r)
 
-        # Load the initial conditions and scales.
-        X_, _, _, scales = utils.load_projected_data(trainsize, r)
+        # Load the initial conditions.
+        X_, _, _ = utils.load_projected_data(trainsize, r)
 
         # Load the appropriate ROM.
         rom = utils.load_rom(trainsize, r, reg)

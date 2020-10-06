@@ -11,7 +11,7 @@ $ python3 step4_plot.py 10000 --time-traces --modes 22 --regularization 4e4
 
 # Plot spatial averages and species integrals for the ROM trained from
 # 20,000 snapshots with 44 POD modes and a regularization parameter 5e4.
-$ python3 step4_plot.py 20000 --species-integral -modes 44 --regularization 5e4
+$ python3 step4_plot.py 20000 --spatial-statistics --modes 44 --regularization 5e4
 
 Loading Results
 ---------------
@@ -73,8 +73,8 @@ def simulate_rom(trainsize, r, reg, steps=None):
     """
     # Load the time domain, basis, initial conditions, and trained ROM.
     t = utils.load_time_domain(steps)
-    V, _ = utils.load_basis(trainsize, r)
-    X_, _, _, scales = utils.load_projected_data(trainsize, r)
+    V, _, scales = utils.load_basis(trainsize, r)
+    X_, _, _ = utils.load_projected_data(trainsize, r)
     rom = utils.load_rom(trainsize, r, reg)
 
     # Simulate the ROM over the full time domain.
@@ -151,6 +151,26 @@ def get_feature(key, data, V=None, scales=None):
     return eval(f"variable.{action}(axis=0)")
 
 
+def veccorrcoef(X, Y, axis=0):
+    """Calculate the (vectorized) linear correlation coefficent,
+    
+                     sum_i[(X_i - Xbar)Y_i - Ybar)]
+        r = -------------------------------------------------.
+            sqrt(sum_i[(X_i - Xbar)^2] sum_i[(Y_i - Ybar)^2])
+    
+    This function is equivalent to (but much faster than)
+    >>> r = [np.corrcoef(X[:,j], Y[:,j])[0,1] for j in range(X.shape[1])].
+    
+    Parameters
+    
+    """
+    dX = X - np.mean(X, axis=axis)
+    dY = Y - np.mean(Y, axis=axis)
+    numer = np.sum(dX*dY, axis=axis)
+    denom2 = np.sum(dX**2, axis=axis) * np.sum(dY**2, axis=axis)
+    return numer / np.sqrt(denom2)
+
+
 # Plot routines ===============================================================
 
 def time_traces(trainsize, r, reg, elems):
@@ -183,10 +203,10 @@ def time_traces(trainsize, r, reg, elems):
     # Load and lift the true results.
     data, _ = utils.load_gems_data(rows=elems[:nelems*config.NUM_GEMSVARS])
     with utils.timed_block("Lifting GEMS time trace data"):
-        traces_gems = dproc.lift(data)
+        traces_gems = dproc.lift(data[:,:60000])
 
     # Load and simulate the ROM.
-    t, V, scales, x_rom = simulate_rom(trainsize, r, reg)
+    t, V, scales, x_rom = simulate_rom(trainsize, r, reg, 60000)
 
     # Reconstruct and rescale the simulation results.
     simend = x_rom.shape[1]
@@ -222,15 +242,150 @@ def time_traces(trainsize, r, reg, elems):
             line.set_linewidth(2)
 
         # Save the figure.
-        utils.save_figure("timetrace"
+        utils.save_figure("pointtrace"
                           f"_{config.TRNFMT(trainsize)}"
                           f"_{config.DIMFMT(r)}"
                           f"_{config.REGFMT(reg)}_{var}.pdf")
 
 
+def errors_in_time(trainsize, r, reg):
+    """Plot spatially averaged errors, and the projection error, in time.
+
+    Parameters
+    ----------
+    trainsize : int
+        Number of snapshots used to train the ROM.
+
+    r : int
+        Dimension of the ROM. This is also the number of retained POD
+        modes (left singular vectors) used to project the training data.
+
+    reg : float
+        Regularization parameter used to train the ROM.
+    """
+    # Load and simulate the ROM.
+    t, V, scales, x_rom = simulate_rom(trainsize, r, reg, 60000)
+
+    # Load and lift the true results.
+    data, _ = utils.load_gems_data(cols=60000)
+    with utils.timed_block("Lifting GEMS data"):
+        data_gems = dproc.lift(data[:,:60000])
+
+    # Shift and project the data (unscaling done later by chunk).
+    with utils.timed_block("Projecting GEMS data to POD subspace"):
+        data_shifted, _ = dproc.scale(data_gems.copy(), scales)
+        data_proj = V.T @ data_shifted
+        del data_shifted
+
+    # Initialize the figure.
+    fig, axes = plt.subplots(3, 3, figsize=(12,6), sharex=True)
+
+    # Compute and plot errors in each variable.
+    for var, ax in zip(config.ROM_VARIABLES, axes.flat):
+
+        with utils.timed_block(f"Reconstructing results for {var}"):
+            Vvar = dproc.getvar(var, V)
+            gems_var = dproc.getvar(var, data_gems)
+            proj_var = dproc.unscale(Vvar @ data_proj, scales, var)
+            pred_var = dproc.unscale(Vvar @ x_rom, scales, var)
+
+        with utils.timed_block(f"Calculating error in {var}"):
+            denom = np.abs(gems_var).max(axis=0)
+            proj_error = np.mean(np.abs(proj_var - gems_var), axis=0) / denom
+            pred_error = np.mean(np.abs(pred_var - gems_var), axis=0) / denom
+
+        # Plot results.
+        ax.plot(t, proj_error, '-', lw=1, label="Projection Error",
+                c=config.GEMS_STYLE['color'])
+        ax.plot(t, pred_error, '-', lw=1, label="ROM Error",
+                c=config.ROM_STYLE['color'])
+        ax.axvline(t[trainsize], color='k')
+        ax.set_ylabel(config.VARTITLES[var])
+
+    # Format the figure.
+    for ax in axes[-1,:]:
+        ax.set_xlim(t[0], t[-1])
+        ax.set_xticks(np.arange(t[0], t[-1]+.001, .002))
+        ax.set_xlabel("Time [s]", fontsize=12)
+
+    # Make legend centered below the subplots.
+    fig.tight_layout(rect=[0, .1, 1, 1])
+    leg = axes[0,0].legend(ncol=2, fontsize=14, loc="lower center",
+                           bbox_to_anchor=(.5, 0),
+                           bbox_transform=fig.transFigure)
+    for line in leg.get_lines():
+        line.set_linestyle('-')
+        line.set_linewidth(5)
+
+    # Save the figure.
+    utils.save_figure(f"errors"
+                      f"_{config.TRNFMT(trainsize)}"
+                      f"_{config.DIMFMT(r)}"
+                      f"_{config.REGFMT(reg)}.pdf")
+    return
+
+
+def corrcoef(trainsize, r, reg):
+    """Plot correlation coefficients in time between GEMS and ROM solutions.
+
+    Parameters
+    ----------
+    trainsize : int
+        Number of snapshots used to train the ROM.
+
+    r : int
+        Dimension of the ROM. This is also the number of retained POD
+        modes (left singular vectors) used to project the training data.
+
+    reg : float
+        Regularization parameter used to train the ROM.
+    """
+    # Load and simulate the ROM.
+    t, V, scales, x_rom = simulate_rom(trainsize, r, reg, 60000)
+
+    # Load and lift the true results.
+    data, _ = utils.load_gems_data(cols=60000)
+    with utils.timed_block("Lifting GEMS data"):
+        data_gems = dproc.lift(data[:,:60000])
+
+    # Initialize the figure.
+    fig, axes = plt.subplots(3, 3, figsize=(12,6), sharex=True, sharey=True)
+
+    # Compute and plot errors in each variable.
+    for var, ax in zip(config.ROM_VARIABLES, axes.flat):
+
+        with utils.timed_block(f"Reconstructing results for {var}"):
+            Vvar = dproc.getvar(var, V)
+            gems_var = dproc.getvar(var, data_gems)
+            pred_var = dproc.unscale(Vvar @ x_rom, scales, var)
+
+        with utils.timed_block(f"Calculating correlation in {var}"):
+            corr = veccorrcoef(gems_var, pred_var)
+
+        # Plot results.
+        ax.plot(t, corr, '-', lw=1, color='C2')
+        ax.axvline(t[trainsize], color='k')
+        ax.axhline(.8, ls='--', lw=1, color='k', alpha=.25)
+        ax.set_ylim(0, 1)
+        ax.set_ylabel(config.VARTITLES[var])
+
+    # Format the figure.
+    for ax in axes[-1,:]:
+        ax.set_xlim(t[0], t[-1])
+        ax.set_xticks(np.arange(t[0], t[-1]+.001, .002))
+        ax.set_xlabel("Time [s]", fontsize=14)
+    fig.suptitle("Linear Correlation Coefficient", fontsize=16)
+
+    # Save the figure.
+    utils.save_figure(f"corrcoef"
+                      f"_{config.TRNFMT(trainsize)}"
+                      f"_{config.DIMFMT(r)}"
+                      f"_{config.REGFMT(reg)}.pdf")
+
+
 def save_statistical_features():
-    """Compute the (spatial) mean temperatures on the full time domain and
-    save them for later. This only needs to be done once.
+    """Compute the spatial and temporal statistics (min, max, mean, etc.)
+    for each variable and save them for later. This only needs to be done once.
     """
     # Load the full data set.
     gems_data, t = utils.load_gems_data()
@@ -244,27 +399,36 @@ def save_statistical_features():
         mins, maxs, sums, stds, means = {}, {}, {}, {}, {}
         for var in config.ROM_VARIABLES:
             val = dproc.getvar(var, lifted_data)
-            mins[var] = val.min(axis=0)
-            maxs[var] = val.max(axis=0)
-            sums[var] = val.sum(axis=0)
-            stds[var] = val.std(axis=0)
-            means[var] = sums[var] / val.shape[0]
+            for axis, label in enumerate(["space", "time"]):
+                name = f"{label}/{var}"
+                print(f"\n\tmin_{label}({var})", end='..', flush=True)
+                mins[name] = val.min(axis=axis)
+                print(f"max_{label}({var})", end='..', flush=True)
+                maxs[name] = val.max(axis=axis)
+                print(f"sum_{label}({var})", end='..', flush=True)
+                sums[name] = val.sum(axis=axis)
+                print(f"std_{label}({var})", end='..', flush=True)
+                stds[name] = val.std(axis=axis)
+            means[f"space/{var}"] = sums[f"space/{var}"] / val.shape[0]
+            means[f"time/{var}"] = sums[f"time/{var}"] / t.size
 
     # Save the data.
     data_path = config.statistical_features_path()
     with utils.timed_block("Saving statistical features"):
         with h5py.File(data_path, 'w') as hf:
             for var in config.ROM_VARIABLES:
-                hf.create_dataset(f"{var}_min", data=mins[var])
-                hf.create_dataset(f"{var}_max", data=maxs[var])
-                hf.create_dataset(f"{var}_sum", data=sums[var])
-                hf.create_dataset(f"{var}_std", data=stds[var])
-                hf.create_dataset(f"{var}_mean", data=means[var])
-            hf.create_dataset("time", data=t)
+                for prefix in ["space", "time"]:
+                    name = f"{prefix}/{var}"
+                    hf.create_dataset(f"{name}_min", data=mins[name])
+                    hf.create_dataset(f"{name}_max", data=maxs[name])
+                    hf.create_dataset(f"{name}_sum", data=sums[name])
+                    hf.create_dataset(f"{name}_std", data=stds[name])
+                    hf.create_dataset(f"{name}_mean", data=means[name])
+            hf.create_dataset("t", data=t)
     logging.info(f"Statistical features saved to {data_path}")
 
 
-def statistical_features(trainsize, r, reg):
+def spatial_statistics(trainsize, r, reg):
     """Plot spatially averaged temperature and spacially itegrated (summed)
     species concentrations over the full time domain.
 
@@ -283,7 +447,7 @@ def statistical_features(trainsize, r, reg):
     # Load the true results.
     keys = [f"{var}_mean" for var in config.ROM_VARIABLES[:4]]
     keys += [f"{var}_sum" for var in config.SPECIES]
-    feature_gems, t = utils.load_statistical_features(keys)
+    feature_gems, t = utils.load_spatial_statistics(keys)
     keys = np.reshape(keys, (4,2), order='F')
 
     # Load and simulate the ROM.
@@ -327,7 +491,8 @@ def statistical_features(trainsize, r, reg):
 # =============================================================================
 
 def main(trainsize, r, reg, elems,
-         plotTimeTrace=False, plotStatisticalFeatures=False):
+         plotTimeTrace=False, plotStatisticalFeatures=False,
+         plotErrors=False, plotCorrelation=False):
     """Make the indicated visualization.
 
     Parameters
@@ -349,7 +514,7 @@ def main(trainsize, r, reg, elems,
 
     # Time traces (single ROM, several monitoring locations).
     if plotTimeTrace:
-        logging.info("TIME TRACES")
+        logging.info("POINT TRACES")
         time_traces(trainsize, r, reg, elems)
 
     # Statistical features (single ROM, several features).
@@ -358,7 +523,98 @@ def main(trainsize, r, reg, elems,
         # Compute GEMS features if needed (only done once).
         if not os.path.isfile(config.statistical_features_path()):
             save_statistical_features()
-        statistical_features(trainsize, r, reg)
+        spatial_statistics(trainsize, r, reg)
+
+    if plotErrors:
+        logging.info("ERRORS IN TIME")
+        errors_in_time(trainsize, r, reg)
+
+    if plotCorrelation:
+        logging.info("CORRELATIONS IN TIME")
+        corrcoef(trainsize, r, reg)
+
+    return
+
+
+
+def projection_errors(trainsize, rs):
+    """Plot spatially averaged projection errors in time.
+
+    Parameters
+    ----------
+    trainsize : int
+        Number of snapshots used to train the ROM.
+
+    rs : list(int)
+        Basis sizes to test
+    """
+    # Load and simulate the ROM.
+    t, V, scales, x_rom = simulate_rom(trainsize, r, reg, 60000)
+
+    # Load and lift the true results.
+    data, _ = utils.load_gems_data(cols=60000)
+    with utils.timed_block("Lifting GEMS data"):
+        data_gems = dproc.lift(data[:,:60000])
+
+    # Shift and project the data (unscaling done later by chunk).
+    with utils.timed_block("Projecting GEMS data to POD subspace"):
+        data_shifted, _ = dproc.scale(data_gems.copy(), scales)
+        data_proj = V.T @ data_shifted
+        del data_shifted
+
+    # Initialize the figure.
+    fig, axes = plt.subplots(3, 3, figsize=(12,6), sharex=True)
+
+    # Compute and plot errors in each variable.
+    for var, ax in zip(config.ROM_VARIABLES, axes.flat):
+
+        with utils.timed_block(f"Reconstructing results for {var}"):
+            Vvar = dproc.getvar(var, V)
+            gems_var = dproc.getvar(var, data_gems)
+            proj_var = dproc.unscale(Vvar @ data_proj, scales, var)
+            pred_var = dproc.unscale(Vvar @ x_rom, scales, var)
+
+        with utils.timed_block(f"Calculating error in {var}"):
+            denom = np.abs(gems_var).max(axis=0)
+            proj_error = np.mean(np.abs(proj_var - gems_var), axis=0) / denom
+            pred_error = np.mean(np.abs(pred_var - gems_var), axis=0) / denom
+
+        # Plot results.
+        ax.plot(t, proj_error, '-', lw=1, label="Projection Error",
+                c=config.GEMS_STYLE['color'])
+        ax.plot(t, pred_error, '-', lw=1, label="ROM Error",
+                c=config.ROM_STYLE['color'])
+        ax.axvline(t[trainsize], color='k')
+        ax.set_ylabel(config.VARTITLES[var])
+
+    # Format the figure.
+    for ax in axes[-1,:]:
+        ax.set_xlim(t[0], t[-1])
+        ax.set_xticks(np.arange(t[0], t[-1]+.001, .002))
+        ax.set_xlabel("Time [s]", fontsize=12)
+
+    # Make legend centered below the subplots.
+    fig.tight_layout(rect=[0, .1, 1, 1])
+    leg = axes[0,0].legend(ncol=2, fontsize=14, loc="lower center",
+                           bbox_to_anchor=(.5, 0),
+                           bbox_transform=fig.transFigure)
+    for line in leg.get_lines():
+        line.set_linestyle('-')
+        line.set_linewidth(5)
+
+    # Save the figure.
+    utils.save_figure(f"errors"
+                      f"_{config.TRNFMT(trainsize)}"
+                      f"_{config.DIMFMT(r)}"
+                      f"_{config.REGFMT(reg)}.pdf")
+    return
+
+
+
+
+
+
+
 
 
 # =============================================================================
@@ -382,10 +638,16 @@ if __name__ == "__main__":
                        help="plot time traces for the given "
                             "basis sizes and regularization parameters "
                             "at the specified monitoring locations")
-    parser.add_argument("-sf", "--statistical-features", action="store_true",
+    parser.add_argument("-sf", "--spatial-statistics", action="store_true",
                         help="plot spatial averages and species integrals "
                              "for the ROM with the given basis size and "
                              "regularization parameters")
+    parser.add_argument("--errors", action="store_true",
+                       help="plot normalized absolute errors, averaged over "
+                            "the spatial domain, as a function of time")
+    parser.add_argument("--correlation", action="store_true",
+                       help="plot correlation coefficients in time for each "
+                            "variable")
 
     # Other keyword arguments
     parser.add_argument("-r", "--modes", type=int, required=True,
@@ -400,4 +662,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     main(trainsize=args.trainsize, r=args.modes, reg=args.regularization,
          plotTimeTrace=args.time_traces, elems=args.location,
-         plotStatisticalFeatures=args.statistical_features)
+         plotStatisticalFeatures=args.spatial_statistics,
+         plotErrors=args.errors, plotCorrelation=args.correlation)
