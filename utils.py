@@ -252,7 +252,7 @@ def load_basis(trainsize, r):
         raise DataNotFoundError(e) from e
 
     # Extract the data.
-    with timed_block(f"Loading POD basis from {data_path}"):
+    with timed_block(f"Loading rank-{r} POD basis from {data_path}"):
         with h5py.File(data_path, 'r') as hf:
             # Check data shapes.
             if hf["V"].shape[1] < r:
