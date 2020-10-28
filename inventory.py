@@ -41,8 +41,6 @@ def print_rom_folder(folder):
         basename = os.path.basename(dfile)
         if basename.startswith(prefix):
             romfiles.append(dfile)
-        elif basename == config.PROJECTED_DATA_FILE:
-            print(f"{_s*3}* Projected data ({basename})")
         else:
             print(f"{_s*3}{basename}")
     for dfile in romfiles:
@@ -58,8 +56,10 @@ def print_trainsize_folder(folder):
         basename = os.path.basename(dfile)
         if basename == config.SCALED_DATA_FILE:
             print(f"{_s*2}* Scaled data ({basename})")
-        elif basename.startswith(config.POD_PREFIX):
+        elif basename == config.BASIS_FILE:
             print(f"{_s*2}* POD basis ({basename})")
+        elif basename == config.PROJECTED_DATA_FILE:
+            print(f"{_s*2}* Projected data ({basename})")
         else:
             print(f"{_s*2}* {basename}")
     for romfolder in _sglob(os.path.join(folder, config.DIM_PREFIX + '*')):

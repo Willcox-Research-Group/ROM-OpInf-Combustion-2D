@@ -223,7 +223,7 @@ def load_scaled_data(trainsize):
             return hf["data"][:,:], hf["time"][:], hf["scales"][:,:]
 
 
-def load_basis(trainsize, r):
+def load_basis(trainsize, num_modes):
     """Load a POD basis and associated singular values.
 
     Parameters
@@ -231,7 +231,7 @@ def load_basis(trainsize, r):
     trainsize : int
         The number of snapshots used when the SVD was computed.
 
-    r : int
+    num_modes : int
         The number of left singular vectors/values to load.
 
     Returns
@@ -239,27 +239,44 @@ def load_basis(trainsize, r):
     V : (NUM_ROMVARS*DOF,r) ndarray
         The POD basis of rank `r` (the first `r` left singular vectors).
 
-    svdvals : (r,) ndarray
-        The first `r` singular values.
-
     scales : (NUM_ROMVARS,4) ndarray
         The min/max factors used to scale the variables before projecting.
     """
     # Locate the data.
-    try:
-        data_path = config.smallest_basis_path(trainsize, r)
-    except FileNotFoundError as e:
-        raise DataNotFoundError(e) from e
+    data_path = _checkexists(config.basis_path(trainsize))
 
     # Extract the data.
-    with timed_block(f"Loading rank-{r} POD basis from {data_path}"):
+    qualifier = f"rank-{num_modes:d} " if num_modes is not None else ""
+    with timed_block(f"Loading {qualifier}POD basis from {data_path}"):
         with h5py.File(data_path, 'r') as hf:
             # Check data shapes.
-            if hf["V"].shape[1] < r:
-                raise RuntimeError(f"data set 'V' has fewer than {r} columns")
+            rmax = hf["V"].shape[1]
+            if num_modes is not None and rmax < num_modes:
+                raise ValueError(f"Basis only has {rmax} columns")
 
             # Load and return the data.
-            return hf["V"][:,:r], hf["svdvals"][:r], hf["scales"][:]
+            return hf["V"][:,:num_modes], hf["scales"][:]
+
+
+def get_basis_size(trainsize):
+    """Get the number of saved POD basis vectors for the given `trainsize`.
+
+    Parameters
+    ----------
+    trainsize : int
+        The number of snapshots used when the SVD was computed.
+
+    Returns
+    -------
+    max_modes : int
+        The number of left singular vectors that have been saved.
+    """
+    # Locate the data.
+    data_path = _checkexists(config.basis_path(trainsize))
+
+    # Extract the data.
+    with h5py.File(data_path, 'r') as hf:
+        return hf["V"].shape[1]
 
 
 def load_projected_data(trainsize, num_modes):
@@ -284,30 +301,28 @@ def load_projected_data(trainsize, num_modes):
 
     time_domain : (trainsize) ndarray
         The time domain corresponding to the lifted, scaled data.
-
-    scales : (NUM_ROMVARS,4) ndarray
-        The min/max factors used to scale the variables before projecting.
     """
     # Locate the data.
-    data_path = _checkexists(config.projected_data_path(trainsize, num_modes))
+    data_path = _checkexists(config.projected_data_path(trainsize))
 
     # Extract the data.
-    _data_shape = (num_modes, trainsize)
     with timed_block(f"Loading projected training data from {data_path}"):
         with h5py.File(data_path, 'r') as hf:
 
             # Check data shapes.
-            if hf["data"].shape != _data_shape:
+            if hf["data"].shape[1] != trainsize:
                 raise RuntimeError(f"data set 'data' has incorrect shape")
-            if hf["xdot"].shape != _data_shape:
+            rmax = hf["data"].shape[0]
+            if rmax < num_modes:
+                raise ValueError(f"Data projected to {rmax} modes maximum")
+            if hf["xdot"].shape[1] != trainsize:
                 raise RuntimeError(f"data set 'xdot' has incorrect shape")
             if hf["time"].shape != (trainsize,):
                 raise RuntimeError(f"data set 'time' has incorrect shape")
-            if hf["scales"].shape != (config.NUM_ROMVARS, 4):
-                raise RuntimeError(f"data set 'scales' has incorrect shape")
 
-            return hf["data"][:,:], hf["xdot"][:,:], \
-                   hf["time"][:], hf["scales"][:,:]
+            return hf["data"][:num_modes,:], \
+                   hf["xdot"][:num_modes,:], \
+                   hf["time"][:]
 
 
 def load_rom(trainsize, num_modes, reg):

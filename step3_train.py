@@ -82,35 +82,19 @@ _MAXFUN = 100               # Artificial ceiling for optimization routine.
 
 # Subroutines =================================================================
 
-def train_rom(*args):
-    """Train a ROM with the given arguments. If there is a Linear Algebra
-    Error, suppress the error and instead return None.
-    """
-    try:
-        return roi.InferredContinuousROM(config.MODELFORM).fit(None, *args)
-    except (np.linalg.LinAlgError, ValueError) as e:
-        if e.args[0] in [               # Near-singular data matrix.
-            "SVD did not converge in Linear Least Squares",
-            "On entry to DLASCL parameter number 4 had an illegal value"
-        ]:
-            return None
-        else:
-            raise
-
-
-def is_bounded(x_rom, B, message="ROM violates bound"):
+def is_bounded(q_rom, B, message="ROM violates bound"):
     """Return True if the absolute integrated POD coefficients lie within the
     given bound.
 
     Parameters
     ----------
-    x_rom : (r,len(time_domain)) ndarray
+    q_rom : (r,len(time_domain)) ndarray
         Integrated POD modes, i.e., the direct result of integrating a ROM.
 
     B : float > 0
         The bound that the integrated POD coefficients must satisfy.
     """
-    if np.abs(x_rom).max() > B:
+    if np.abs(q_rom).max() > B:
         print(message+"...", end='')
         logging.info(message)
         return False
@@ -163,18 +147,25 @@ def train_and_save_all(trainsize, num_modes, regs):
     logging.info(f"TRAINING {len(num_modes)*len(regs)} ROMS")
     for r in num_modes:
         # Load training data.
-        X_, Xdot_, time_domain, _ = utils.load_projected_data(trainsize, r)
+        Q_, Qdot_, time_domain = utils.load_projected_data(trainsize, r)
 
         # Evaluate inputs over the training time domain.
-        Us = config.U(time_domain)
+        U = config.U(time_domain)
+
+        # Create a solver mapping regularization parameters to operators.
+        with utils.timed_block(f"Constructing/factoring data matrix, r={r:d}"):
+            rom = roi.InferredContinuousROM(config.MODELFORM)
+            Q_, Qdot_, U = rom._process_fit_arguments(None, Q_, Qdot_, U)
+            solver = roi.lstsq.LstsqSolverL2(compute_extras=False)
+            solver.fit(rom._construct_data_matrix(Q_, U), Qdot_.T)
 
         # Train and save each ROM.
         for reg in regs:
             with utils.timed_block(f"Training ROM with r={r:d}, reg={reg:e}"):
-                rom = train_rom(X_, Xdot_, Us, reg)
-                if rom:
-                    rom.save_model(config.rom_path(trainsize, r, reg),
-                                   save_basis=False, overwrite=True)
+                rom._extract_operators(solver.predict(reg).T)
+                rom._construct_f_()
+                rom.save_model(config.rom_path(trainsize, r, reg),
+                               save_basis=False, overwrite=True)
 
 
 def train_with_gridsearch(trainsize, num_modes, regs,
@@ -213,15 +204,23 @@ def train_with_gridsearch(trainsize, num_modes, regs,
 
     # Load the full time domain and evaluate the input function.
     t = utils.load_time_domain(testsize)
-    Us = config.U(t)
+    U = config.U(t)
 
+    rom = roi.InferredContinuousROM(config.MODELFORM)
     logging.info(f"TRAINING {len(num_modes)*len(regs)} ROMS")
     for ii,r in enumerate(num_modes):
         # Load training data.
-        X_, Xdot_, _, scales = utils.load_projected_data(trainsize, r)
+        Q_, Qdot_, _ = utils.load_projected_data(trainsize, r)
 
         # Compute the bound to require for integrated POD modes.
-        M = margin * np.abs(X_).max()
+        M = margin * np.abs(Q_).max()
+
+        # Create a solver mapping regularization parameters to operators.
+        with utils.timed_block(f"Constructing/factoring data matrix, r={r:d}"):
+            Q_, Qdot_, Utrain = rom._process_fit_arguments(None, Q_, Qdot_,
+                                                                 U[:trainsize])
+            solver = roi.lstsq.LstsqSolverL2(compute_extras=False)
+            solver.fit(rom._construct_data_matrix(Q_, Utrain), Qdot_.T)
 
         # Test each regularization parameter.
         trained_roms = {}
@@ -231,22 +230,21 @@ def train_with_gridsearch(trainsize, num_modes, regs,
 
             # Train the ROM on all training snapshots.
             with utils.timed_block(f"Testing ROM with r={r:d}, reg={reg:e}"):
-                rom = train_rom(X_, Xdot_, Us[:trainsize], reg)
-                if not rom:
-                    continue        # Skip if training fails.
+                rom._extract_operators(solver.predict(reg).T)
+                rom._construct_f_()
                 trained_roms[reg] = rom
 
                 # Simulate the ROM over the full domain.
                 with np.warnings.catch_warnings():
                     np.warnings.simplefilter("ignore")
-                    x_rom = rom.predict(X_[:,0], t, config.U, method="RK45")
+                    q_rom = rom.predict(Q_[:,0], t, config.U, method="RK45")
 
                 # Check for boundedness of solution.
-                errors = errors_pass if is_bounded(x_rom, M) else errors_fail
+                errors = errors_pass if is_bounded(q_rom, M) else errors_fail
 
                 # Calculate integrated relative errors in the reduced space.
-                if x_rom.shape[1] > trainsize:
-                    errors[reg] = roi.post.Lp_error(X_, x_rom[:,:trainsize],
+                if q_rom.shape[1] > trainsize:
+                    errors[reg] = roi.post.Lp_error(Q_, q_rom[:,:trainsize],
                                                               t[:trainsize])[1]
 
         # Choose and save the ROM with the least error.
@@ -268,7 +266,7 @@ def train_with_gridsearch(trainsize, num_modes, regs,
     plt.legend()
     plt.xlabel(r"Regularization parameter $\lambda$")
     plt.ylabel(r"ROM relative error $\frac"
-               r"{||\widehat{\mathbf{Q}} - \widetilde{\mathbf{Q}}'||}"
+               r"{||\widehat{\mathbf{Q}} - \widetilde{\mathbf{Q}}_{:,:k}||}"
                r"{||\widehat{\mathbf{Q}}||}$")
     plt.ylim(0, 1)
     plt.xlim(min(regs), max(regs))
@@ -314,14 +312,22 @@ def train_with_minimization(trainsize, num_modes, regs,
 
     # Load the full time domain and evaluate the input function.
     t = utils.load_time_domain(testsize)
-    Us = config.U(t)
+    U = config.U(t)
 
+    rom = roi.InferredContinuousROM(config.MODELFORM)
     for r in num_modes:
         # Load training data.
-        X_, Xdot_, _, scales = utils.load_projected_data(trainsize, r)
+        Q_, Qdot_, _ = utils.load_projected_data(trainsize, r)
 
         # Compute the bound to require for integrated POD modes.
-        B = margin * np.abs(X_).max()
+        B = margin * np.abs(Q_).max()
+
+        # Create a solver mapping regularization parameters to operators.
+        with utils.timed_block(f"Constructing/factoring data matrix, r={r:d}"):
+            Q_, Qdot_, Utrain = rom._process_fit_arguments(None, Q_, Qdot_,
+                                                                 U[:trainsize])
+            solver = roi.lstsq.LstsqSolverL2(compute_extras=False)
+            solver.fit(rom._construct_data_matrix(Q_, Utrain), Qdot_.T)
 
         # Test each regularization parameter.
         def training_error_from_rom(log10reg):
@@ -329,29 +335,28 @@ def train_with_minimization(trainsize, num_modes, regs,
 
             # Train the ROM on all training snapshots.
             with utils.timed_block(f"Testing ROM with r={r:d}, reg={reg:e}"):
-                rom = train_rom(X_, Xdot_, Us[:trainsize], reg)
-                if not rom:
-                    return _MAXFUN
+                rom._extract_operators(solver.predict(reg).T)
+                rom._construct_f_()
 
                 # Simulate the ROM over the full domain.
                 with np.warnings.catch_warnings():
                     np.warnings.simplefilter("ignore")
-                    x_rom = rom.predict(X_[:,0], t, config.U, method="RK45")
+                    q_rom = rom.predict(Q_[:,0], t, config.U, method="RK45")
 
                 # Check for boundedness of solution.
-                if not is_bounded(x_rom, B):
+                if not is_bounded(q_rom, B):
                     return _MAXFUN
 
                 # Calculate integrated relative errors in the reduced space.
-                return roi.post.Lp_error(X_, x_rom[:,:trainsize],
+                return roi.post.Lp_error(Q_, q_rom[:,:trainsize],
                                                    t[:trainsize])[1]
 
         opt_result = opt.minimize_scalar(training_error_from_rom,
                                          bounds=bounds, method="bounded")
         if opt_result.success and opt_result.fun != _MAXFUN:
             best_reg = 10 ** opt_result.x
-            best_rom = train_rom(X_, Xdot_, Us[:trainsize], best_reg)
-            save_best_trained_rom(trainsize, r, best_reg, best_rom)
+            rom._extract_operators(solver.predict(best_reg).T)
+            save_best_trained_rom(trainsize, r, best_reg, rom)
         else:
             print(f"Regularization search optimization FAILED for r = {r:d}")
 

@@ -150,8 +150,9 @@ def main(timeindices, variables=None, snaptype=["gems", "rom", "error"],
                                                         for v in variables])
     # Simulate ROM if needed.
     if ("rom" in snaptype) or ("error" in snaptype):
+        ## TODO: use subroutine from step4_plot.py.
         # Load the SVD data.
-        V, _, scales = utils.load_basis(trainsize, r)
+        V, scales = utils.load_basis(trainsize, r)
 
         # Load the initial conditions.
         X_, _, _ = utils.load_projected_data(trainsize, r)

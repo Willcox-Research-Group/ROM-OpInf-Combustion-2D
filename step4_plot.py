@@ -73,7 +73,7 @@ def simulate_rom(trainsize, r, reg, steps=None):
     """
     # Load the time domain, basis, initial conditions, and trained ROM.
     t = utils.load_time_domain(steps)
-    V, _, scales = utils.load_basis(trainsize, r)
+    V, scales = utils.load_basis(trainsize, r)
     X_, _, _ = utils.load_projected_data(trainsize, r)
     rom = utils.load_rom(trainsize, r, reg)
 
@@ -571,7 +571,7 @@ def projection_errors(trainsize, rs):
     for r in rs:
 
         # Load the POD basis of rank r.
-        V, _, scales = utils.load_basis(trainsize, r)
+        V, scales = utils.load_basis(trainsize, r)
 
         # Shift the data (unscaling done later by chunk).
         if r == rs[0]:

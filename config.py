@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 
 # CHANGE THIS LINE vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 
-BASE_FOLDER = ""                            # Base folder for all data.
+BASE_FOLDER = "/storage/combustion_gems_2D"                            # Base folder for all data.
 
 # CHANGE THIS LINE ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -28,6 +28,7 @@ TECPLOT_FOLDER = "tecdata"                  # Name of Tecplot data folder.
 
 GEMS_DATA_FILE = "gems.h5"                  # Name of GEMS data file.
 SCALED_DATA_FILE = "data_scaled.h5"         # Name of scaled data files.
+BASIS_FILE = "basis.h5"                     # Name of POD basis files.
 PROJECTED_DATA_FILE = "data_projected.h5"   # Name of projected data files.
 FEATURES_FILE = "statistical_features.h5"   # Name of statistical feature file.
 GRID_FILE = "grid.dat"                      # Name of Tecplot grid data file.
@@ -35,13 +36,22 @@ LOG_FILE = "log.log"                        # Name of log files.
 
 TRN_PREFIX = "k"                            # Prefix for training size folders.
 DIM_PREFIX = "r"                            # Prefix for ROM dimension folders.
-POD_PREFIX = "basis"                        # Prefix for POD basis files.
 ROM_PREFIX = "rom"                          # Prefix for trained ROM files.
 REG_PREFIX = "reg"                          # Prefix for regularization values.
 
-TRNFMT = lambda k: f"{TRN_PREFIX}{k:05d}"   # String format for training sizes.
-DIMFMT = lambda r: f"{DIM_PREFIX}{r:03d}"   # String format for ROM dimensions.
-REGFMT = lambda λ: f"{REG_PREFIX}{λ:09.0f}" # String format for regularization.
+def TRNFMT(k):
+    """String format for trianing sizes."""
+    return f"{TRN_PREFIX}{k:05d}"
+
+def DIMFMT(rs):
+    """String format for ROM dimensions."""
+    if np.isscalar(rs):
+        rs = [rs]
+    return DIM_PREFIX + '-'.join([f"{r:03d}" for r in rs])
+
+def REGFMT(λ):
+    """String format for the regularization parmeter."""
+    return f"{REG_PREFIX}{λ:09.0f}"
 
 # Domain geometry -------------------------------------------------------------
 
@@ -100,7 +110,7 @@ MODELFORM = "cAHB"                          # ROM operators to be inferred.
 
 U = lambda t: 1e6*(1 + 0.1*np.sin(np.pi*10000*t))
 
-# Matplotlib plot customization --------------------------------------------------
+# Matplotlib plot customization -----------------------------------------------
 
 plt.rc("figure", dpi=1200)                  # High-quality figures.
 plt.rc("text", usetex=True)                 # Use LaTeX fonts.
@@ -179,40 +189,18 @@ def scaled_data_path(trainsize):
     return os.path.join(folder, SCALED_DATA_FILE)
 
 
-def basis_path(trainsize, num_modes):
-    """Return the path to the file containing the POD basis
-    computed with `trainsize` snapshots and `num_modes` modes.
+def basis_path(trainsize):
+    """Return the path to the file containing the POD basis computed from
+    `trainsize` lifted, scaled snapshots.
     """
-    return os.path.join(BASE_FOLDER, TRNFMT(trainsize),
-                        f"{POD_PREFIX}_{DIMFMT(num_modes)}.h5")
+    return os.path.join(BASE_FOLDER, TRNFMT(trainsize), BASIS_FILE)
 
 
-def smallest_basis_path(trainsize, num_modes):
-    """Return the path to the file containing the *smallest* POD basis
-    computed with `trainsize` snapshots and at least `num_modes` modes.
-    """
-    folder = os.path.join(BASE_FOLDER, TRNFMT(trainsize))
-    files = glob.glob(os.path.join(folder, f"{POD_PREFIX}_*.h5"))
-    if not files:
-        raise FileNotFoundError(f"could not locate POD file with {trainsize} "
-                                f"training snapshots in {folder}")
-    pat = fr"{POD_PREFIX}_{DIM_PREFIX}(\d+)\.h5"
-    rs = [int(re.findall(pat, s)[0]) for s in files]
-    rs = [r for r in rs if r >= num_modes]
-    if not rs:
-        raise FileNotFoundError(f"could not locate POD file with {trainsize} "
-                                f"training snapshots and at least {num_modes} "
-                                f"retained POD modes in {folder}")
-    return basis_path(trainsize, min(rs))
-
-
-def projected_data_path(trainsize, num_modes):
+def projected_data_path(trainsize):
     """Return the path to the file containing `trainsize` training snapshots,
-    projected to a `num_modes`-dimensional space.
+    projected with a POD basis computed from `trainsize` high-fidelity snapshots.
     """
-    folder = _makefolder(BASE_FOLDER,
-                         TRNFMT(trainsize), DIMFMT(num_modes))
-    return os.path.join(folder, PROJECTED_DATA_FILE)
+    return os.path.join(BASE_FOLDER, TRNFMT(trainsize), PROJECTED_DATA_FILE)
 
 
 def rom_path(trainsize, num_modes, reg):
@@ -220,8 +208,8 @@ def rom_path(trainsize, num_modes, reg):
     `trainsize` snapshots, projected to a `num_modes`-dimensional space,
     with regularization factor `reg`.
     """
-    folder = os.path.join(BASE_FOLDER,
-                          TRNFMT(trainsize), DIMFMT(num_modes))
+    folder = _makefolder(BASE_FOLDER,
+                         TRNFMT(trainsize), DIMFMT(num_modes))
     return os.path.join(folder, f"{ROM_PREFIX}_{REGFMT(reg)}.h5")
 
 
@@ -234,8 +222,8 @@ def statistical_features_path():
 
 def figures_path():
     """Return the path to the folder containing all results figures."""
-    # return _makefolder(BASE_FOLDER, FIGURES_FOLDER)   # Put figures by data.
-    return _makefolder(os.getcwd(), FIGURES_FOLDER)     # Put figures by code.
+    # return _makefolder(BASE_FOLDER, FIGURES_FOLDER)   # Figures live by data.
+    return _makefolder(os.getcwd(), FIGURES_FOLDER)     # Figures live by code.
 
 
 def tecplot_path():
