@@ -413,7 +413,7 @@ def load_rom(trainsize, r1, r2, reg):
         The trained reduced-order model.
     """
     # Locate the data.
-    data_path = _checkexists(config.rom_path(trainsize, [r1,r2], reg))
+    data_path = _checkexists(config.rom_path(trainsize, r1, r2, reg))
 
     # Extract the trained ROM.
     try:

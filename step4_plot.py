@@ -35,7 +35,7 @@ import data_processing as dproc
 
 # Helper functions ============================================================
 
-def simulate_rom(trainsize, r, reg, steps=None):
+def simulate_rom(trainsize, r1, r2, reg, steps=None):
     """Load everything needed to simulate a given ROM, simulate the ROM,
     and return the simulation results and everything needed to reconstruct
     the results in the original high-dimensional space.
@@ -46,9 +46,11 @@ def simulate_rom(trainsize, r, reg, steps=None):
     trainsize : int
         Number of snapshots used to train the ROM.
 
-    r : int
-        Dimension of the ROM. This is also the number of retained POD
-        modes (left singular vectors) used to project the training data.
+    r1 : int
+        The number of retained POD modes used in the NON-T projection.
+
+    r2 : int
+        The number of retained POD modes used in the T-only projection.
 
     reg : float
         Regularization parameter used to train the ROM.
@@ -68,21 +70,21 @@ def simulate_rom(trainsize, r, reg, steps=None):
     scales : (NUM_ROMVARS,4) ndarray
         Information for how the data was scaled. See data_processing.scale().
 
-    x_rom : (nt,r) ndarray
+    q_rom : (nt,r) ndarray
         Prediction results from the ROM.
     """
     # Load the time domain, basis, initial conditions, and trained ROM.
     t = utils.load_time_domain(steps)
-    V, scales = utils.load_basis(trainsize, r)
-    X_, _, _ = utils.load_projected_data(trainsize, r)
-    rom = utils.load_rom(trainsize, r, reg)
+    V, scales = utils.load_basis(trainsize, r1, r2)
+    Q_, _, _ = utils.load_projected_data(trainsize, r1, r2)
+    rom = utils.load_rom(trainsize, r1, r2, reg)
 
     # Simulate the ROM over the full time domain.
-    with utils.timed_block(f"Simulating ROM with r={r:d}, "
+    with utils.timed_block(f"Simulating ROM with r1={r1:d}, r2={r2:d}, "
                            f"reg={reg:e} over full time domain"):
-        x_rom = rom.predict(X_[:,0], t, config.U, method="RK45")
+        q_rom = rom.predict(Q_[:,0], t, config.U, method="RK45")
 
-    return t, V, scales, x_rom
+    return t, V, scales, q_rom
 
 
 def get_traces(locs, data, V=None, scales=None):
@@ -183,7 +185,7 @@ def veccorrcoef(X, Y):
 
 # Plot routines ===============================================================
 
-def time_traces(trainsize, r, reg, elems):
+def time_traces(trainsize, r1, r2, reg, elems):
     """Plot the time trace of each variable in the original data at the monitor
     location, and the time trace of each variable of the ROM reconstruction at
     the same locations. One figure is generated per variable.
@@ -193,9 +195,11 @@ def time_traces(trainsize, r, reg, elems):
     trainsize : int
         Number of snapshots used to train the ROM.
 
-    r : int
-        Dimension of the ROM. This is also the number of retained POD
-        modes (left singular vectors) used to project the training data.
+    r1 : int
+        The number of retained POD modes used in the NON-T projection.
+
+    r2 : int
+        The number of retained POD modes used in the T-only projection.
 
     reg : float
         Regularization parameter used to train the ROM.
@@ -216,12 +220,12 @@ def time_traces(trainsize, r, reg, elems):
         traces_gems = dproc.lift(data[:,:60000])
 
     # Load and simulate the ROM.
-    t, V, scales, x_rom = simulate_rom(trainsize, r, reg, 60000)
+    t, V, scales, q_rom = simulate_rom(trainsize, r1, r2, reg, 60000)
 
     # Reconstruct and rescale the simulation results.
-    simend = x_rom.shape[1]
+    simend = q_rom.shape[1]
     with utils.timed_block("Reconstructing simulation results"):
-        traces_rom = dproc.unscale(V[elems] @ x_rom, scales)
+        traces_rom = dproc.unscale(V[elems] @ q_rom, scales)
 
     # Save a figure for each variable.
     xticks = np.arange(t[0], t[-1]+.001, .002)
@@ -254,11 +258,11 @@ def time_traces(trainsize, r, reg, elems):
         # Save the figure.
         utils.save_figure("pointtrace"
                           f"_{config.TRNFMT(trainsize)}"
-                          f"_{config.DIMFMT(r)}"
+                          f"_{config.DIMFMT([r1,r2])}"
                           f"_{config.REGFMT(reg)}_{var}.pdf")
 
 
-def errors_in_time(trainsize, r, reg):
+def errors_in_time(trainsize, r1, r2, reg):
     """Plot spatially averaged errors, and the projection error, in time.
 
     Parameters
@@ -266,15 +270,17 @@ def errors_in_time(trainsize, r, reg):
     trainsize : int
         Number of snapshots used to train the ROM.
 
-    r : int
-        Dimension of the ROM. This is also the number of retained POD
-        modes (left singular vectors) used to project the training data.
+    r1 : int
+        The number of retained POD modes used in the NON-T projection.
+
+    r2 : int
+        The number of retained POD modes used in the T-only projection.
 
     reg : float
         Regularization parameter used to train the ROM.
     """
     # Load and simulate the ROM.
-    t, V, scales, x_rom = simulate_rom(trainsize, r, reg, 60000)
+    t, V, scales, q_rom = simulate_rom(trainsize, r1, r2, reg, 60000)
 
     # Load and lift the true results.
     data, _ = utils.load_gems_data(cols=60000)
@@ -298,7 +304,7 @@ def errors_in_time(trainsize, r, reg):
             Vvar = dproc.getvar(var, V)
             gems_var = dproc.getvar(var, data_gems)
             proj_var = dproc.unscale(Vvar @ data_proj, scales, var)
-            pred_var = dproc.unscale(Vvar @ x_rom, scales, var)
+            pred_var = dproc.unscale(Vvar @ q_rom, scales, var)
 
         with utils.timed_block(f"Calculating error in {var}"):
             denom = np.abs(gems_var).max(axis=0)
@@ -331,12 +337,12 @@ def errors_in_time(trainsize, r, reg):
     # Save the figure.
     utils.save_figure(f"errors"
                       f"_{config.TRNFMT(trainsize)}"
-                      f"_{config.DIMFMT(r)}"
+                      f"_{config.DIMFMT([r1,r2])}"
                       f"_{config.REGFMT(reg)}.pdf")
     return
 
 
-def corrcoef(trainsize, r, reg):
+def corrcoef(trainsize, r1, r2, reg):
     """Plot correlation coefficients in time between GEMS and ROM solutions.
 
     Parameters
@@ -344,15 +350,17 @@ def corrcoef(trainsize, r, reg):
     trainsize : int
         Number of snapshots used to train the ROM.
 
-    r : int
-        Dimension of the ROM. This is also the number of retained POD
-        modes (left singular vectors) used to project the training data.
+    r1 : int
+        The number of retained POD modes used in the NON-T projection.
+
+    r2 : int
+        The number of retained POD modes used in the T-only projection.
 
     reg : float
         Regularization parameter used to train the ROM.
     """
     # Load and simulate the ROM.
-    t, V, scales, x_rom = simulate_rom(trainsize, r, reg, 60000)
+    t, V, scales, q_rom = simulate_rom(trainsize, r1, r2, reg, 60000)
 
     # Load and lift the true results.
     data, _ = utils.load_gems_data(cols=60000)
@@ -368,7 +376,7 @@ def corrcoef(trainsize, r, reg):
         with utils.timed_block(f"Reconstructing results for {var}"):
             Vvar = dproc.getvar(var, V)
             gems_var = dproc.getvar(var, data_gems)
-            pred_var = dproc.unscale(Vvar @ x_rom, scales, var)
+            pred_var = dproc.unscale(Vvar @ q_rom, scales, var)
 
         with utils.timed_block(f"Calculating correlation in {var}"):
             corr = veccorrcoef(gems_var, pred_var)
@@ -390,7 +398,7 @@ def corrcoef(trainsize, r, reg):
     # Save the figure.
     utils.save_figure(f"corrcoef"
                       f"_{config.TRNFMT(trainsize)}"
-                      f"_{config.DIMFMT(r)}"
+                      f"_{config.DIMFMT([r1,r2])}"
                       f"_{config.REGFMT(reg)}.pdf")
 
 
@@ -439,7 +447,7 @@ def save_statistical_features():
     logging.info(f"Statistical features saved to {data_path}")
 
 
-def spatial_statistics(trainsize, r, reg):
+def spatial_statistics(trainsize, r1, r2, reg):
     """Plot spatially averaged temperature and spacially itegrated (summed)
     species concentrations over the full time domain.
 
@@ -448,9 +456,11 @@ def spatial_statistics(trainsize, r, reg):
     trainsize : int
         Number of snapshots used to train the ROM.
 
-    r : int
-        Dimension of the ROM. This is also the number of retained POD
-        modes (left singular vectors) used to project the training data.
+    r1 : int
+        The number of retained POD modes used in the NON-T projection.
+
+    r2 : int
+        The number of retained POD modes used in the T-only projection.
 
     reg : float
         Regularization parameter used to train the ROM.
@@ -462,7 +472,7 @@ def spatial_statistics(trainsize, r, reg):
     keys = np.reshape(keys, (4,2), order='F')
 
     # Load and simulate the ROM.
-    t, V, scales, x_rom = simulate_rom(trainsize, r, reg)
+    t, V, scales, q_rom = simulate_rom(trainsize, r1, r2, reg)
 
     # Initialize the figure.
     fig, axes = plt.subplots(keys.shape[0], keys.shape[1],
@@ -471,9 +481,9 @@ def spatial_statistics(trainsize, r, reg):
     # Calculate and plot the results.
     for ax,key in zip(axes.flat, keys.flat):
         with utils.timed_block(f"Reconstructing"):
-            feature_rom = get_feature(key, x_rom, V, scales)
+            feature_rom = get_feature(key, q_rom, V, scales)
         ax.plot(t, feature_gems[key], lw=1, **config.GEMS_STYLE)
-        ax.plot(t[:x_rom.shape[1]], feature_rom, lw=1, **config.ROM_STYLE)
+        ax.plot(t[:q_rom.shape[1]], feature_rom, lw=1, **config.ROM_STYLE)
         ax.axvline(t[trainsize], color='k')
         ax.set_ylabel(config.VARLABELS[var])
         ax.locator_params(axis='y', nbins=2)
@@ -496,12 +506,12 @@ def spatial_statistics(trainsize, r, reg):
 
     utils.save_figure(f"statfeatures"
                       f"_{config.TRNFMT(trainsize)}"
-                      f"_{config.DIMFMT(r)}"
+                      f"_{config.DIMFMT([r1,r2])}"
                       f"_{config.REGFMT(reg)}.pdf")
 
 # =============================================================================
 
-def main(trainsize, r, reg, elems,
+def main(trainsize, r1, r2, reg, elems,
          plotTimeTrace=False, plotStatisticalFeatures=False,
          plotErrors=False, plotCorrelation=False):
     """Make the indicated visualization.
@@ -511,9 +521,11 @@ def main(trainsize, r, reg, elems,
     trainsize : int
         Number of snapshots used to train the ROM.
 
-    r : int
-        Dimension of the ROM. This is also the number of retained POD
-        modes (left singular vectors) used to project the training data.
+    r1 : int
+        The number of retained POD modes used in the NON-T projection.
+
+    r2 : int
+        The number of retained POD modes used in the T-only projection.
 
     reg : float
         The regularization parameters used to train each ROM.
@@ -526,7 +538,7 @@ def main(trainsize, r, reg, elems,
     # Time traces (single ROM, several monitoring locations).
     if plotTimeTrace:
         logging.info("POINT TRACES")
-        time_traces(trainsize, r, reg, elems)
+        time_traces(trainsize, r1, r2, reg, elems)
 
     # Statistical features (single ROM, several features).
     if plotStatisticalFeatures:
@@ -534,15 +546,15 @@ def main(trainsize, r, reg, elems,
         # Compute GEMS features if needed (only done once).
         if not os.path.isfile(config.statistical_features_path()):
             save_statistical_features()
-        spatial_statistics(trainsize, r, reg)
+        spatial_statistics(trainsize, r1, r2, reg)
 
     if plotErrors:
         logging.info("ERRORS IN TIME")
-        errors_in_time(trainsize, r, reg)
+        errors_in_time(trainsize, r1, r2, reg)
 
     if plotCorrelation:
         logging.info("CORRELATIONS IN TIME")
-        corrcoef(trainsize, r, reg)
+        corrcoef(trainsize, r1, r2, reg)
 
     return
 
@@ -661,8 +673,12 @@ if __name__ == "__main__":
                             "variable")
 
     # Other keyword arguments
-    parser.add_argument("-r", "--modes", type=int, required=True,
-                        help="number of POD modes used to project data")
+    parser.add_argument("-r1", type=int, required=True,
+                        help="number of POD modes used to project "
+                             "non-temperature data")
+    parser.add_argument("-r2", type=int, required=True,
+                        help="number of POD modes used to project "
+                             "temperature data")
     parser.add_argument("-reg", "--regularization", type=float, required=True,
                         help="regularization parameter used in ROM training")
     parser.add_argument("-loc", "--location", type=int, nargs='+',
@@ -671,7 +687,8 @@ if __name__ == "__main__":
 
     # Do the main routine.
     args = parser.parse_args()
-    main(trainsize=args.trainsize, r=args.modes, reg=args.regularization,
+    main(trainsize=args.trainsize,
+         r1=args.r1, r2=args.r2, reg=args.regularization,
          plotTimeTrace=args.time_traces, elems=args.location,
          plotStatisticalFeatures=args.spatial_statistics,
          plotErrors=args.errors, plotCorrelation=args.correlation)
