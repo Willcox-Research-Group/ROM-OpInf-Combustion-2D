@@ -176,7 +176,7 @@ def scale(data, scales=None, variables=None):
         s = slice(i*chunksize,(i+1)*chunksize)
         if learning:
             assert i == vidx
-            if variables[i] in ["P", "T", "xi"]:
+            if variables[i] in ["p", "T", "xi"]:
                 scales[i,0] = np.median(data[s])
                 shifted = data[s] - scales[i,0]
             else:
@@ -190,7 +190,7 @@ def scale(data, scales=None, variables=None):
     # Report info on the learned scaling.
     if learning:
         sep = '|'.join(['-'*12]*2)
-        report = f"""\nLearned new scaling
+        report = f"""Learned new scaling
                        Shift    |    Denom
                     {sep}
     Pressure        {scales[0,0]:<12.3e}|{scales[0,1]:>12.3e}

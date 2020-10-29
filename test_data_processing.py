@@ -57,7 +57,7 @@ def test_scalers(lifted_data):
     with utils.timed_block("Verifying shift results with scales"):
         for i,v in enumerate(config.ROM_VARIABLES):
             s = slice(i*config.DOF, (i+1)*config.DOF)
-            if v in ["P", "T", "xi"]:
+            if v in ["p", "T", "xi"]:
                 assert scales[i,0] == np.median(lifted_data[s])
             else:
                 assert scales[i,0] == 0

@@ -216,7 +216,7 @@ def load_scaled_data(trainsize):
                 raise RuntimeError(f"data set 'data' has incorrect shape")
             if hf["time"].shape != (trainsize,):
                 raise RuntimeError(f"data set 'time' has incorrect shape")
-            if hf["scales"].shape != (config.NUM_ROMVARS, 4):
+            if hf["scales"].shape != (config.NUM_ROMVARS, 2):
                 raise RuntimeError(f"data set 'scales' has incorrect shape")
 
             # Load and return the data.
