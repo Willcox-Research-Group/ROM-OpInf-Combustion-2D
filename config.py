@@ -100,8 +100,8 @@ U = lambda t: 1e6*(1 + 0.1*np.sin(np.pi*10000*t))
 
 plt.rc("figure", dpi=1200)                  # High-quality figures.
 plt.rc("text", usetex=True)                 # Use LaTeX fonts.
-plt.rc("font", family="serif")              # Crisp axis labels.
-plt.rc("legend", edgecolor='none',          # No borders around legends.
+plt.rc("font", family="serif")              # Serif axis labels.
+plt.rc("legend", edgecolor="none",          # No borders around legends.
                  frameon=False)             # No legend backgrounds.
 
 # Names of the learning variables (for LaTeX fonts).
