@@ -101,7 +101,7 @@ def is_bounded(q_rom, B, message="ROM violates bound"):
     return True
 
 
-def save_best_trained_rom(trainsize, r, reg, rom):
+def save_best_trained_rom(trainsize, r1, r2, reg, rom):
     """Save the trained ROM with the specified attributes.
 
     Parameters
@@ -109,9 +109,13 @@ def save_best_trained_rom(trainsize, r, reg, rom):
     trainsize : int
         Number of snapshots used to train the ROM.
 
-    r : int
-        Dimension of the trained ROM, i.e., the number of retained POD
-        modes (left singular vectors) used to project the training data.
+    r1 : int
+        Number of retained POD modes (left singular vectors) used to project
+        the non-temperature training data.
+
+    r2 : int
+        Number of retained POD modes (left singular vectors) used to project
+        the temperature training data.
 
     reg : float > 0
         Regularization parameter used in the training.
@@ -119,15 +123,16 @@ def save_best_trained_rom(trainsize, r, reg, rom):
     rom : rom_operator_inference.InferredContinuousROM
         Actual trained ROM object. Must have a `save_model()` method.
     """
-    save_path = config.rom_path(trainsize, r, reg)
-    with utils.timed_block(f"Best regularization for r={r:d}: {reg:.0f}"):
+    save_path = config.rom_path(trainsize, r1, r2, reg)
+    with utils.timed_block("Best regularization for "
+                           f"r1={r1:d}, r2={r2:d}: {reg:.0f}"):
         rom.save_model(save_path, save_basis=False, overwrite=True)
     logging.info(f"ROM saved to {save_path}")
 
 
 # Main routines ===============================================================
 
-def train_and_save_all(trainsize, num_modes, regs):
+def train_and_save_all(trainsize, r1, r2, regs):
     """Train and save ROMs with the given dimension and regularization.
 
     Parameters
@@ -135,40 +140,44 @@ def train_and_save_all(trainsize, num_modes, regs):
     trainsize : int
         Number of snapshots to use to train the ROM(s).
 
-    num_modes : int or list(int)
-        Dimension of the ROM(s) to train, i.e., the number of retained POD
-        modes (left singular vectors) used to project the training data.
+    r1 : int
+        Number of retained POD modes (left singular vectors) used to project
+        the non-temperature training data.
+
+    r2 : int
+        Number of retained POD modes (left singular vectors) used to project
+        the temperature training data.
 
     regs : float or list(float)
         regularization parameter(s) to use in the training.
     """
     utils.reset_logger(trainsize)
 
-    logging.info(f"TRAINING {len(num_modes)*len(regs)} ROMS")
-    for r in num_modes:
-        # Load training data.
-        Q_, Qdot_, time_domain = utils.load_projected_data(trainsize, r)
+    logging.info(f"TRAINING {len(regs)} ROMS")
 
-        # Evaluate inputs over the training time domain.
-        U = config.U(time_domain)
+    # Load training data.
+    Q_, Qdot_, time_domain = utils.load_projected_data(trainsize, r1, r2)
 
-        # Create a solver mapping regularization parameters to operators.
-        with utils.timed_block(f"Constructing/factoring data matrix, r={r:d}"):
-            rom = roi.InferredContinuousROM(config.MODELFORM)
-            Q_, Qdot_, U = rom._process_fit_arguments(None, Q_, Qdot_, U)
-            solver = roi.lstsq.LstsqSolverL2(compute_extras=False)
-            solver.fit(rom._construct_data_matrix(Q_, U), Qdot_.T)
+    # Evaluate inputs over the training time domain.
+    U = config.U(time_domain)
 
-        # Train and save each ROM.
-        for reg in regs:
-            with utils.timed_block(f"Training ROM with r={r:d}, reg={reg:e}"):
-                rom._extract_operators(solver.predict(reg).T)
-                rom._construct_f_()
-                rom.save_model(config.rom_path(trainsize, r, reg),
-                               save_basis=False, overwrite=True)
+    # Create a solver mapping regularization parameters to operators.
+    with utils.timed_block("Constructing/factoring data matrix, "
+                           f"r1={r1:d}, r2={r2:d}"):
+        rom = roi.InferredContinuousROM(config.MODELFORM)
+        Q_, Qdot_, U = rom._process_fit_arguments(None, Q_, Qdot_, U)
+        solver = roi.lstsq.LstsqSolverL2(compute_extras=False)
+        solver.fit(rom._construct_data_matrix(Q_, U), Qdot_.T)
+
+    # Train and save each ROM.
+    for reg in regs:
+        with utils.timed_block(f"Training ROM with r={r:d}, reg={reg:e}"):
+            rom._extract_operators(solver.predict(reg).T)
+            rom.save_model(config.rom_path(trainsize, r1, r2, reg),
+                           save_basis=False, overwrite=True)
 
 
-def train_with_gridsearch(trainsize, num_modes, regs,
+def train_with_gridsearch(trainsize, r1, r2, regs,
                           testsize=None, margin=1.5):
     """Train ROMs with the given dimension(s) and regularization(s),
     saving only the ROM with the least training error that satisfies
@@ -179,9 +188,13 @@ def train_with_gridsearch(trainsize, num_modes, regs,
     trainsize : int
         Number of snapshots to use to train the ROM(s).
 
-    num_modes : int or list(int)
-        Dimension of the ROM(s) to train, i.e., the number of retained POD
-        modes (left singular vectors) used to project the training data.
+    r1 : int
+        Number of retained POD modes (left singular vectors) used to project
+        the non-temperature training data.
+
+    r2 : int
+        Number of retained POD modes (left singular vectors) used to project
+        the temperature training data.
 
     regs : float or list(float)
         regularization parameter(s) to use in the training.
@@ -197,8 +210,6 @@ def train_with_gridsearch(trainsize, num_modes, regs,
     utils.reset_logger(trainsize)
 
     # Parse aguments.
-    if np.isscalar(num_modes):
-        num_modes = [num_modes]
     if np.isscalar(regs):
         regs = [regs]
 
@@ -207,61 +218,65 @@ def train_with_gridsearch(trainsize, num_modes, regs,
     U = config.U(t)
 
     rom = roi.InferredContinuousROM(config.MODELFORM)
-    logging.info(f"TRAINING {len(num_modes)*len(regs)} ROMS")
-    for ii,r in enumerate(num_modes):
-        # Load training data.
-        Q_, Qdot_, _ = utils.load_projected_data(trainsize, r)
+    logging.info(f"TRAINING {len(regs)} ROMS")
 
-        # Compute the bound to require for integrated POD modes.
-        M = margin * np.abs(Q_).max()
+    # Load training data.
+    Q_, Qdot_, _ = utils.load_projected_data(trainsize, r1, r2)
 
-        # Create a solver mapping regularization parameters to operators.
-        with utils.timed_block(f"Constructing/factoring data matrix, r={r:d}"):
-            Q_, Qdot_, Utrain = rom._process_fit_arguments(None, Q_, Qdot_,
-                                                                 U[:trainsize])
-            solver = roi.lstsq.LstsqSolverL2(compute_extras=False)
-            solver.fit(rom._construct_data_matrix(Q_, Utrain), Qdot_.T)
+    # Compute the bound to require for integrated POD modes.
+    M = margin * np.abs(Q_).max()
 
-        # Test each regularization parameter.
-        trained_roms = {}
-        errors_pass = {}
-        errors_fail = {}
-        for reg in regs:
+    # Create a solver mapping regularization parameters to operators.
+    with utils.timed_block("Constructing/factoring data matrix, "
+                           f"r1={r1:d}, r2={r2:d}"):
+        Q_, Qdot_, Utrain = rom._process_fit_arguments(None, Q_, Qdot_,
+                                                             U[:trainsize])
+        solver = roi.lstsq.LstsqSolverL2(compute_extras=False)
+        solver.fit(rom._construct_data_matrix(Q_, Utrain), Qdot_.T)
 
-            # Train the ROM on all training snapshots.
-            with utils.timed_block(f"Testing ROM with r={r:d}, reg={reg:e}"):
-                rom._extract_operators(solver.predict(reg).T)
-                rom._construct_f_()
-                trained_roms[reg] = rom
+    # Test each regularization parameter.
+    trained_roms = {}
+    errors_pass = {}
+    errors_fail = {}
+    for reg in regs:
 
-                # Simulate the ROM over the full domain.
-                with np.warnings.catch_warnings():
-                    np.warnings.simplefilter("ignore")
-                    q_rom = rom.predict(Q_[:,0], t, config.U, method="RK45")
+        # Train the ROM on all training snapshots.
+        with utils.timed_block("Testing ROM with "
+                               f"r1={r1:d}, r2={r2:d}, reg={reg:e}"):
+            rom._extract_operators(solver.predict(reg).T)
+            rom._construct_f_()
+            trained_roms[reg] = rom
 
-                # Check for boundedness of solution.
-                errors = errors_pass if is_bounded(q_rom, M) else errors_fail
+            # Simulate the ROM over the full domain.
+            with np.warnings.catch_warnings():
+                np.warnings.simplefilter("ignore")
+                q_rom = rom.predict(Q_[:,0], t, config.U, method="RK45")
 
-                # Calculate integrated relative errors in the reduced space.
-                if q_rom.shape[1] > trainsize:
-                    errors[reg] = roi.post.Lp_error(Q_, q_rom[:,:trainsize],
-                                                              t[:trainsize])[1]
+            # Check for boundedness of solution.
+            errors = errors_pass if is_bounded(q_rom, M) else errors_fail
 
-        # Choose and save the ROM with the least error.
-        plt.semilogx(list(errors_fail.keys()), list(errors_fail.values()),
-                     f"C{ii}x", mew=1, label=fr"$r = {r:d}$, bound violated")
-        if not errors_pass:
-            print(f"NO STABLE ROMS for r = {r:d}")
-            continue
+            # Calculate integrated relative errors in the reduced space.
+            if q_rom.shape[1] > trainsize:
+                errors[reg] = roi.post.Lp_error(Q_, q_rom[:,:trainsize],
+                                                          t[:trainsize])[1]
 
-        err2reg = {err:reg for reg,err in errors_pass.items()}
-        best_reg = err2reg[min(err2reg.keys())]
-        best_rom = trained_roms[best_reg]
-        save_best_trained_rom(trainsize, r, best_reg, best_rom)
+    # Choose and save the ROM with the least error.
+    plt.semilogx(list(errors_fail.keys()), list(errors_fail.values()),
+                 f"C0x", mew=1,
+                 label=fr"$r_1 = {r1:d}, r_2 = {r2:d}$, bound violated")
+    if not errors_pass:
+        print(f"NO STABLE ROMS for r1={r1:d}, r2={r2:d}")
+        return
 
-        plt.semilogx(list(errors_pass.keys()), list(errors_pass.values()),
-                     f"C{ii}*", mew=0, label=fr"$r = {r:d}$, bound satisfied")
-        plt.axvline(best_reg, lw=.5, color=f"C{ii}")
+    err2reg = {err:reg for reg,err in errors_pass.items()}
+    best_reg = err2reg[min(err2reg.keys())]
+    best_rom = trained_roms[best_reg]
+    save_best_trained_rom(trainsize, r1, r2, best_reg, best_rom)
+
+    plt.semilogx(list(errors_pass.keys()), list(errors_pass.values()),
+                 f"C0*", mew=0,
+                 label=fr"$r_1 = {r1:d}, r_2 = {r2:d}$, bound satisfied")
+    plt.axvline(best_reg, lw=.5, color=f"C0")
 
     plt.legend()
     plt.xlabel(r"Regularization parameter $\lambda$")
@@ -274,7 +289,7 @@ def train_with_gridsearch(trainsize, num_modes, regs,
     utils.save_figure(f"regsweep_nt{trainsize:05d}.pdf")
 
 
-def train_with_minimization(trainsize, num_modes, regs,
+def train_with_minimization(trainsize, r1, r2, regs,
                             testsize=None, margin=1.5):
     """Train ROMs with the given dimension(s), saving only the ROM with
     the least training error that satisfies a bound on the integrated POD
@@ -286,12 +301,16 @@ def train_with_minimization(trainsize, num_modes, regs,
     trainsize : int
         Number of snapshots to use to train the ROM(s).
 
-    num_modes : int or list(int)
-        Dimension of the ROM(s) to train, i.e., the number of retained POD
-        modes (left singular vectors) used to project the training data.
+    r1 : int
+        Number of retained POD modes (left singular vectors) used to project
+        the non-temperature training data.
+
+    r2 : int
+        Number of retained POD modes (left singular vectors) used to project
+        the temperature training data.
 
     regs : [float, float]
-        regularization parameter(s) to use in the training.
+        Regularization parameter(s) to use in the training.
 
     testsize : int
         Number of time steps for which a valid ROM must satisfy the POD bound.
@@ -304,8 +323,6 @@ def train_with_minimization(trainsize, num_modes, regs,
     utils.reset_logger(trainsize)
 
     # Parse aguments.
-    if np.isscalar(num_modes):
-        num_modes = [num_modes]
     if np.isscalar(regs) or len(regs) != 2:
         raise ValueError("2 regularizations required (reg_low, reg_high)")
     bounds = np.log10(regs)
@@ -315,50 +332,52 @@ def train_with_minimization(trainsize, num_modes, regs,
     U = config.U(t)
 
     rom = roi.InferredContinuousROM(config.MODELFORM)
-    for r in num_modes:
-        # Load training data.
-        Q_, Qdot_, _ = utils.load_projected_data(trainsize, r)
 
-        # Compute the bound to require for integrated POD modes.
-        B = margin * np.abs(Q_).max()
+    # Load training data.
+    Q_, Qdot_, _ = utils.load_projected_data(trainsize, r1, r2)
 
-        # Create a solver mapping regularization parameters to operators.
-        with utils.timed_block(f"Constructing/factoring data matrix, r={r:d}"):
-            Q_, Qdot_, Utrain = rom._process_fit_arguments(None, Q_, Qdot_,
-                                                                 U[:trainsize])
-            solver = roi.lstsq.LstsqSolverL2(compute_extras=False)
-            solver.fit(rom._construct_data_matrix(Q_, Utrain), Qdot_.T)
+    # Compute the bound to require for integrated POD modes.
+    B = margin * np.abs(Q_).max()
 
-        # Test each regularization parameter.
-        def training_error_from_rom(log10reg):
-            reg = 10**log10reg
+    # Create a solver mapping regularization parameters to operators.
+    with utils.timed_block("Constructing/factoring data matrix, "
+                           f"r1={r1:d}, r2={r2:d}"):
+        Q_, Qdot_, Utrain = rom._process_fit_arguments(None, Q_, Qdot_,
+                                                             U[:trainsize])
+        solver = roi.lstsq.LstsqSolverL2(compute_extras=False)
+        solver.fit(rom._construct_data_matrix(Q_, Utrain), Qdot_.T)
 
-            # Train the ROM on all training snapshots.
-            with utils.timed_block(f"Testing ROM with r={r:d}, reg={reg:e}"):
-                rom._extract_operators(solver.predict(reg).T)
-                rom._construct_f_()
+    # Test each regularization parameter.
+    def training_error_from_rom(log10reg):
+        reg = 10**log10reg
 
-                # Simulate the ROM over the full domain.
-                with np.warnings.catch_warnings():
-                    np.warnings.simplefilter("ignore")
-                    q_rom = rom.predict(Q_[:,0], t, config.U, method="RK45")
+        # Train the ROM on all training snapshots.
+        with utils.timed_block("Testing ROM with "
+                               f"r1={r1:d}, r2={r2:d}, reg={reg:e}"):
+            rom._extract_operators(solver.predict(reg).T)
+            rom._construct_f_()
 
-                # Check for boundedness of solution.
-                if not is_bounded(q_rom, B):
-                    return _MAXFUN
+            # Simulate the ROM over the full domain.
+            with np.warnings.catch_warnings():
+                np.warnings.simplefilter("ignore")
+                q_rom = rom.predict(Q_[:,0], t, config.U, method="RK45")
 
-                # Calculate integrated relative errors in the reduced space.
-                return roi.post.Lp_error(Q_, q_rom[:,:trainsize],
-                                                   t[:trainsize])[1]
+            # Check for boundedness of solution.
+            if not is_bounded(q_rom, B):
+                return _MAXFUN
 
-        opt_result = opt.minimize_scalar(training_error_from_rom,
-                                         bounds=bounds, method="bounded")
-        if opt_result.success and opt_result.fun != _MAXFUN:
-            best_reg = 10 ** opt_result.x
-            rom._extract_operators(solver.predict(best_reg).T)
-            save_best_trained_rom(trainsize, r, best_reg, rom)
-        else:
-            print(f"Regularization search optimization FAILED for r = {r:d}")
+            # Calculate integrated relative errors in the reduced space.
+            return roi.post.Lp_error(Q_, q_rom[:,:trainsize], t[:trainsize])[1]
+
+    opt_result = opt.minimize_scalar(training_error_from_rom,
+                                     bounds=bounds, method="bounded")
+    if opt_result.success and opt_result.fun != _MAXFUN:
+        best_reg = 10 ** opt_result.x
+        rom._extract_operators(solver.predict(best_reg).T)
+        save_best_trained_rom(trainsize, r1, r2, best_reg, rom)
+    else:
+        print("Regularization search optimization FAILED "
+              f"for r1={r1:d}, r2={r2:d}")
 
 
 # =============================================================================
@@ -394,11 +413,12 @@ if __name__ == "__main__":
                             "interval via minimize scalar minimization")
 
     # Main positional arguments.
-    parser.add_argument("-r", "--modes", type=int, nargs='+', required=True,
-                        help="number(s) of POD modes used to project data")
-    parser.add_argument("--moderange", action="store_true",
-                   help="if two modes given, treat them as min, max"
-                         " and train for each integer in [min, max]")
+    parser.add_argument("-r1", type=int, required=True,
+                        help="number of POD modes used to project "
+                             "non-temperature data")
+    parser.add_argument("-r2", type=int, required=True,
+                        help="number of POD modes used to project "
+                             "temperature data")
     parser.add_argument("-reg", "--regularization", type=float, nargs='+',
                         required=True,
                         help="regularization parameter(s) for ROM training "
@@ -418,8 +438,6 @@ if __name__ == "__main__":
 
     # Parse arguments and mode and regularization options.
     args = parser.parse_args()
-    if args.moderange and len(args.modes) == 2:
-        args.modes = list(range(args.modes[0], args.modes[1]+1))
     if args.regrange and len(args.regularization) == 2 and not args.minimize:
         args.regularization = np.logspace(np.log10(args.regularization[0]),
                                           np.log10(args.regularization[1]),
@@ -428,10 +446,10 @@ if __name__ == "__main__":
 
     # Do one of the main routines.
     if args.save_all:
-        train_and_save_all(args.trainsize, args.modes, regs)
+        train_and_save_all(args.trainsize, args.r1, args.r2, regs)
     elif args.gridsearch:
-        train_with_gridsearch(args.trainsize, args.modes, regs,
+        train_with_gridsearch(args.trainsize, args.r1, args.r2, regs,
                               args.testsize, args.margin)
     elif args.minimize:
-        train_with_minimization(args.trainsize, args.modes, regs,
+        train_with_minimization(args.trainsize, args.r1, args.r2, regs,
                                 args.testsize, args.margin)

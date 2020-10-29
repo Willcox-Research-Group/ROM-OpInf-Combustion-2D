@@ -266,10 +266,10 @@ def load_basis(trainsize, r1, r2):
             scales = hf["scales"][:]
 
         # Put the two basis blocks together, preserving variable order.
-        return construct_basis(V1, V2), scales
+        return _assemble_basis(V1, V2), scales
 
 
-def construct_basis(V1, V2):
+def _assemble_basis(V1, V2):
     """Piece the two bases together in a block structure, preserving
     the order of the variables as given in the configuration file, i.e.,
 
@@ -386,7 +386,7 @@ def load_projected_data(trainsize, r1, r2):
             return Q_, Qdot_, hf["time"][:]
 
 
-def load_rom(trainsize, num_modes, reg):
+def load_rom(trainsize, r1, r2, reg):
     """Load a single trained ROM.
 
     Parameters
@@ -395,9 +395,13 @@ def load_rom(trainsize, num_modes, reg):
         The number of snapshots used to train the ROM. This is also the number
         of snapshots that were used when the POD basis (SVD) was computed.
 
-    num_modes : int
-        The dimension of the ROM. This is also the number of retained POD modes
-        (left singular vectors) used to project the training data.
+    r1 : int
+        Number of retained POD modes (left singular vectors) used to project
+        the non-temperature training data.
+
+    r2 : int
+        Number of retained POD modes (left singular vectors) used to project
+        the temperature training data.
 
     reg : float
         The regularization factor used in the Operator Inference least-squares
@@ -409,101 +413,22 @@ def load_rom(trainsize, num_modes, reg):
         The trained reduced-order model.
     """
     # Locate the data.
-    data_path = _checkexists(config.rom_path(trainsize, num_modes, reg))
+    data_path = _checkexists(config.rom_path(trainsize, [r1,r2], reg))
 
     # Extract the trained ROM.
     try:
         rom = roi.load_model(data_path)
     except FileNotFoundError as e:
         raise DataNotFoundError(f"could not locate ROM with {trainsize:d} "
-                                f"training snapshots, r={num_modes}, and "
-                                f"reg={reg:e}") from e
+                                f"training snapshots, r1={r1:d}, r2={r2:d}, "
+                                f"and reg={reg:e}") from e
     # Check data shapes.
-    if rom.r != num_modes:
-        raise RuntimeError(f"rom.r = {rom.r} != {num_modes}")
+    if rom.r != r1 + r2:
+        raise RuntimeError(f"rom.r = {rom.r} != {r1+r2}")
 
     rom.trainsize = trainsize
     rom.reg = reg
     return rom
-
-
-def load_all_roms_r(trainsize, num_modes):
-    """Load all trained ROM of the same dimension for a given training size.
-
-    Parameters
-    ----------
-    trainsize : int
-        The number of snapshots used to train the ROMs. This is also the number
-        of snapshots that were used when the POD basis (SVD) was computed.
-
-    num_modes : int
-        The dimension of the ROMs. This is also the number of retained POD
-        modes (left singular vectors) used to project the training data.
-
-    Returns
-    -------
-    regs : list(float)
-        The regularization factors corresponding to the ROMs.
-
-    roms : list(roi.InferredContinuousROM)
-        The trained reduced-order models.
-    """
-    # Find the ROM files of interest.
-    folder = os.path.join(config.BASE_FOLDER,
-                          config.TRNFMT(trainsize), config.DIMFMT(num_modes))
-    pat = os.path.join(folder, f"{config.ROM_PREFIX}_{config.REG_PREFIX}*.h5")
-    romfiles = sorted(glob.glob(pat))
-    if not romfiles:
-        raise DataNotFoundError(f"no trained ROMs with {trainsize:d} "
-                                f"training snapshots and {num_modes:d} "
-                                f"retained POD modes")
-
-    # Load the files (in sorted order).
-    regs = sorted(float(re.findall(fr"_{config.REG_PREFIX}(.+?)\.h5", s)[0])
-                                                          for s in romfiles)
-    roms = [load_rom(trainsize, num_modes, reg) for reg in regs]
-
-    return regs, roms
-
-
-def load_all_roms_reg(trainsize, reg):
-    """For a given training size, load all trained ROM that were trained
-    with the same regularization parameter.
-
-    Parameters
-    ----------
-    trainsize : int
-        The number of snapshots used to train the ROMs. This is also the number
-        of snapshots that were used when the POD basis (SVD) was computed.
-
-    reg : float
-        The regularization factor used in the Operator Inference least-squares
-        problem for training the ROMs.
-
-    Returns
-    -------
-    rs : list(int)
-        The dimension (number of retained POD modes) of each ROM.
-
-    roms : list(roi.InferredContinuousROM)
-        The trained reduced-order models.
-    """
-    # Find the rom files of interest.
-    pat = os.path.join(config.BASE_FOLDER,
-                       config.TRNFMT(trainsize),
-                       f"r*",
-                       f"{config.ROM_PREFIX}_{config.REGFMT(reg)}.h5")
-    romfiles = glob.glob(pat)
-    if not romfiles:
-        raise DataNotFoundError(f"no trained ROMs with {trainsize:d} "
-                                f"training snapshots and regularization "
-                                f"factor {reg:e}")
-
-    # Load the files (in sorted order).
-    rs = sorted(int(re.findall(r"r(\d+)", s)[0]) for s in romfiles)
-    roms = [load_rom(trainsize, r, reg) for r in rs]
-
-    return rs, roms
 
 
 def load_spatial_statistics(keys, k=None):

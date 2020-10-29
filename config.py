@@ -189,13 +189,13 @@ def projected_data_path(trainsize):
     return os.path.join(BASE_FOLDER, TRNFMT(trainsize), PROJECTED_DATA_FILE)
 
 
-def rom_path(trainsize, num_modes, reg):
+def rom_path(trainsize, r1, r2, reg):
     """Return the path to the file containing a ROM trained from
-    `trainsize` snapshots, projected to a `num_modes`-dimensional space,
+    `trainsize` snapshots, projected to a (r1+r2)-dimensional space,
     with regularization factor `reg`.
     """
     folder = _makefolder(BASE_FOLDER,
-                         TRNFMT(trainsize), DIMFMT(num_modes))
+                         TRNFMT(trainsize), DIMFMT([r1,r2]))
     return os.path.join(folder, f"{ROM_PREFIX}_{REGFMT(reg)}.h5")
 
 

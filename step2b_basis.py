@@ -67,7 +67,7 @@ def compute_and_save_pod_basis(num_modes, training_data, scales):
                                          n_iter=15, random_state=42)
     # Save the POD basis.
     save_path = config.basis_path(training_data.shape[1])
-    with utils.timed_block(f"Saving POD basis of rank {num_modes}"):
+    with utils.timed_block(f"Saving POD basis"):
         with h5py.File(save_path, 'w') as hf:
             hf.create_dataset("notT/V", data=V1)
             hf.create_dataset("notT/svdvals", data=svdvals1)
@@ -76,7 +76,7 @@ def compute_and_save_pod_basis(num_modes, training_data, scales):
             hf.create_dataset("scales", data=scales)
     logging.info(f"POD bases of rank {num_modes} saved to {save_path}.\n")
 
-    return utils.construct_basis(V1, V2)
+    return utils._assemble_basis(V1, V2)
 
 
 def main(trainsize, num_modes):
