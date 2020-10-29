@@ -88,20 +88,6 @@ MOLAR_MASSES = [16.04,                      # Molar mass of CH4 [kg/kmol].
 
 R_UNIVERSAL = 8.3144598                     # Univ. gas constant [J/(mol K)].
 
-# Scaling information ---------------------------------------------------------
-
-# Scale the learning variables to the following bounds.
-SCALE_TO = np.array([[-1, 1],               # Pressure.
-                     [-1, 1],               # x-velocity.
-                     [-1, 1],               # y-velocity.
-                     [-1, 1],               # Temperature.
-                     [-1, 1],               # Specific volume.
-                     [ 0, 1],               # CH4 molar concentration.
-                     [ 0, 1],               #  O2 molar concentration.
-                     [ 0, 1],               # H2O molar concentration.
-                     [ 0, 1]],              # CO2 molar concentration.
-                    dtype=np.float)
-
 # ROM Structure ---------------------------------------------------------------
 
 MODELFORM = "cAHB"                          # ROM operators to be inferred.
@@ -254,9 +240,6 @@ def rom_snapshot_path(trainsize, num_modes, reg):
 
 
 # Validation ------------------------------------------------------------------
-
-if SCALE_TO.shape[0] != NUM_ROMVARS:
-    raise ValueError(f"SCALE_TO must have NUM_ROMVARS={NUM_ROMVARS} rows")
 
 # Check dictionary keys
 for d,label in zip([VARTITLES, VARUNITS], ["VARTITLES", "VARUNITS"]):
