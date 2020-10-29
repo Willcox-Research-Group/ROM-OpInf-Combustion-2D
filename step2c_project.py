@@ -75,12 +75,14 @@ def project_and_save_data(Q, t, V):
         Qdot_ = roi.pre.xdot_uniform(Q_, dt, order=4)
 
     # Save the projected training data.
+    r1, r2 = utils.get_basis_size(Q.shape[1])
     save_path = config.projected_data_path(Q.shape[1])
     with utils.timed_block(f"Saving projected data"):
         with h5py.File(save_path, 'w') as hf:
             hf.create_dataset("data", data=Q_)
-            hf.create_dataset("xdot", data=Qdot_)
+            hf.create_dataset("ddt", data=Qdot_)
             hf.create_dataset("time", data=t)
+            hf.create_dataset("rs", data=[r1, r2])
     logging.info(f"Projected data saved to {save_path}.\n")
 
     return Q_, Qdot_
@@ -104,7 +106,7 @@ def main(trainsize):
     scaled_data, time_domain, _ = utils.load_scaled_data(trainsize)
 
     # Load the POD basis.
-    V, scales = utils.load_basis(trainsize, None)
+    V, scales = utils.load_basis(trainsize, None, None)
 
     # Project and save the data.
     return project_and_save_data(scaled_data, time_domain, V)

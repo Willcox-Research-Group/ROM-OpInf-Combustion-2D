@@ -196,13 +196,13 @@ def load_scaled_data(trainsize):
 
     Returns
     -------
-    X : (NUM_ROMVARS*DOF,trainsize) ndarray
+    Q : (NUM_ROMVARS*DOF,trainsize) ndarray
         The lifted, scaled data.
 
     time_domain : (trainsize) ndarray
         The time domain corresponding to the lifted, scaled data.
 
-    scales : (NUM_ROMVARS,4) ndarray
+    scales : (NUM_ROMVARS,2) ndarray
         The min/max factors used to scale the variables.
     """
     # Locate the data.
@@ -223,7 +223,7 @@ def load_scaled_data(trainsize):
             return hf["data"][:,:], hf["time"][:], hf["scales"][:,:]
 
 
-def load_basis(trainsize, num_modes):
+def load_basis(trainsize, r1, r2):
     """Load a POD basis and associated singular values.
 
     Parameters
@@ -231,13 +231,17 @@ def load_basis(trainsize, num_modes):
     trainsize : int
         The number of snapshots used when the SVD was computed.
 
-    num_modes : int
-        The number of left singular vectors/values to load.
+    r1 : int
+        The number of left singular vectors to load for the NON-T basis.
+
+    r2 : int
+        The number of left singular vectors to load for the T-only basis.
 
     Returns
     -------
-    V : (NUM_ROMVARS*DOF,r) ndarray
-        The POD basis of rank `r` (the first `r` left singular vectors).
+    V : (NUM_ROMVARS*DOF,r1+r2) ndarray
+        Complete block-structure POD basis with r1 columns for all variables
+        except temperature and r2 columns exclusively for temperature.
 
     scales : (NUM_ROMVARS,4) ndarray
         The min/max factors used to scale the variables before projecting.
@@ -246,16 +250,60 @@ def load_basis(trainsize, num_modes):
     data_path = _checkexists(config.basis_path(trainsize))
 
     # Extract the data.
-    qualifier = f"rank-{num_modes:d} " if num_modes is not None else ""
-    with timed_block(f"Loading {qualifier}POD basis from {data_path}"):
+    with timed_block(f"Loading POD basis from {data_path}"):
         with h5py.File(data_path, 'r') as hf:
             # Check data shapes.
-            rmax = hf["V"].shape[1]
-            if num_modes is not None and rmax < num_modes:
-                raise ValueError(f"Basis only has {rmax} columns")
+            rmax1 = hf["notT/V"].shape[1]
+            if r1 is not None and rmax1 < r1:
+                raise ValueError(f"non-T basis only has {rmax1} columns")
+            rmax2 = hf["notT/V"].shape[1]
+            if r2 is not None and rmax2 < r2:
+                raise ValueError(f"T basis only has {rmax2} columns")
 
-            # Load and return the data.
-            return hf["V"][:,:num_modes], hf["scales"][:]
+            # Load the data.
+            V1 = hf["notT/V"][:,:r1]
+            V2 = hf["T/V"][:,:r2]
+            scales = hf["scales"][:]
+
+        # Put the two basis blocks together, preserving variable order.
+        return construct_basis(V1, V2), scales
+
+
+def construct_basis(V1, V2):
+    """Piece the two bases together in a block structure, preserving
+    the order of the variables as given in the configuration file, i.e.,
+
+            [V1a   0]
+        V = [ 0   V2]
+            [V1b   0].
+
+    Parameters
+    ----------
+    V1 : ((NUM_ROMVARS-1)*DOF,r1) ndarray
+        POD basis for all variables except temperature.
+
+    V2 : (DOF,r2) ndarray
+        POD basis for temperature only.
+
+    Returns
+    -------
+    V : (NUM_ROMVARS*DOF,r1+r2) ndarray
+        Complete block-structure POD basis with r1 columns for all variables
+        except temperature and r2 columns exclusively for temperature.
+    """
+    N = config.DOF * config.NUM_ROMVARS
+    if V1.shape[0] + V2.shape[0] != N:
+        raise RuntimeError("illegal basis size (row count off)")
+    r1, r2 = V1.shape[1], V2.shape[1]
+    n1 = config.ROM_VARIABLES.index("T")*config.DOF
+    n2 = n1 + config.DOF
+
+    V = np.zeros((N,r1+r2))
+    V[:n1,:r1] = V1[:n1]
+    V[n1:n2,r1:] = V2
+    V[n2:,:r1] = V1[n1:]
+
+    return V
 
 
 def get_basis_size(trainsize):
@@ -268,18 +316,23 @@ def get_basis_size(trainsize):
 
     Returns
     -------
-    max_modes : int
-        The number of left singular vectors that have been saved.
+    r1 : int
+        Number of left singular vectors that have been saved for the
+        non-temperature basis.
+
+    r2 : int
+        Number of left singular vectors that have been saved for the
+        temperature-only basis.
     """
     # Locate the data.
     data_path = _checkexists(config.basis_path(trainsize))
 
     # Extract the data.
     with h5py.File(data_path, 'r') as hf:
-        return hf["V"].shape[1]
+        return hf["notT/V"].shape[1], hf["T/V"].shape[1]
 
 
-def load_projected_data(trainsize, num_modes):
+def load_projected_data(trainsize, r1, r2):
     """Load snapshots that have been projected to a low-dimensional subspace.
 
     Parameters
@@ -288,16 +341,19 @@ def load_projected_data(trainsize, num_modes):
         The number of snapshots to load. This is also the number of
         snapshots that were used when the POD basis (SVD) was computed.
 
-    num_modes : int
-        The number of retained POD modes used in the projection.
+    r1 : int
+        The number of retained POD modes used in the NON-T projection.
+
+    r2 : int
+        The number of retained POD modes used in the T-only projection.
 
     Returns
     -------
-    X_ : (num_modes,trainsize) ndarray
+    Q_ : (r1+r2,trainsize) ndarray
         The lifted, scaled, projected snapshots.
 
-    Xdot_ : (num_modes,trainsize) ndarray
-        Velocity snapshots corresponding to X_.
+    Qdot_ : (r1+r2,trainsize) ndarray
+        Velocity snapshots corresponding to Q_.
 
     time_domain : (trainsize) ndarray
         The time domain corresponding to the lifted, scaled data.
@@ -310,19 +366,24 @@ def load_projected_data(trainsize, num_modes):
         with h5py.File(data_path, 'r') as hf:
 
             # Check data shapes.
+            R1, R2 = hf["rs"][:]
+            if hf["data"].shape[0] != R1 + R2:
+                raise RuntimeError(f"data sets 'data' and 'rs' not aligned")
+            if R1 < r1:
+                raise ValueError(f"Non-T data only projected to {R1} modes")
+            if R2 < r2:
+                raise ValueError(f"T data only projected to {R1} modes")
             if hf["data"].shape[1] != trainsize:
                 raise RuntimeError(f"data set 'data' has incorrect shape")
-            rmax = hf["data"].shape[0]
-            if rmax < num_modes:
-                raise ValueError(f"Data projected to {rmax} modes maximum")
-            if hf["xdot"].shape[1] != trainsize:
-                raise RuntimeError(f"data set 'xdot' has incorrect shape")
+            if hf["ddt"].shape != hf["data"].shape:
+                raise RuntimeError(f"data sets 'data' and 'ddt' not aligned")
             if hf["time"].shape != (trainsize,):
                 raise RuntimeError(f"data set 'time' has incorrect shape")
 
-            return hf["data"][:num_modes,:], \
-                   hf["xdot"][:num_modes,:], \
-                   hf["time"][:]
+            # Get the correct rows of the saved projection data.
+            Q_ = np.row_stack([hf["data"][:r1], hf["data"][R1:R1+r2]])
+            Qdot_ = np.row_stack([hf["ddt"][:r1], hf["ddt"][R1:R1+r2]])
+            return Q_, Qdot_, hf["time"][:]
 
 
 def load_rom(trainsize, num_modes, reg):
