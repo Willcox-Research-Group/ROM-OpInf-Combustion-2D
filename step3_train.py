@@ -82,6 +82,25 @@ _MAXFUN = 100               # Artificial ceiling for optimization routine.
 
 # Subroutines =================================================================
 
+def _check_dofs(trainsize, r):
+    """Report the number of unknowns in the Operator Inference problem,
+    compared to the number of snapshots. Ask user for confirmation before
+    attempting to solve an underdetermined problem.
+    """
+    # Print info on the size of the system to be solved.
+    d = roi.lstsq.lstsq_size(config.MODELFORM, r, m=1)
+    message = f"{trainsize} snapshots, {r}x{d} DOFs ({r*d} total)"
+    print(message)
+    logging.info(message)
+
+    # If the system is underdetermined, ask for confirmation before proceeding.
+    if d > trainsize:
+        message = "LSTSQ SYSTEM UNDERDETERMINED"
+        logging.warning(message)
+        if input(f"{message}! CONTINUE? [y/n] ") != "y":
+            raise ValueError(message)
+
+
 def is_bounded(q_rom, B, message="ROM violates bound"):
     """Return True if the absolute integrated POD coefficients lie within the
     given bound.
@@ -152,6 +171,7 @@ def train_and_save_all(trainsize, r1, r2, regs):
         regularization parameter(s) to use in the training.
     """
     utils.reset_logger(trainsize)
+    _check_dofs(trainsize, r1 + r2)
 
     logging.info(f"TRAINING {len(regs)} ROMS")
 
@@ -208,6 +228,7 @@ def train_with_gridsearch(trainsize, r1, r2, regs,
         data Q, i.e., bound = margin * max(abs(Q)).
     """
     utils.reset_logger(trainsize)
+    _check_dofs(trainsize, r1 + r2)
 
     # Parse aguments.
     if np.isscalar(regs):
@@ -321,6 +342,7 @@ def train_with_minimization(trainsize, r1, r2, regs,
         data Q, i.e., bound = margin * max(abs(Q)).
     """
     utils.reset_logger(trainsize)
+    _check_dofs(trainsize, r1 + r2)
 
     # Parse aguments.
     if np.isscalar(regs) or len(regs) != 2:

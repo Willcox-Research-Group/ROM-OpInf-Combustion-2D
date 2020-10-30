@@ -21,6 +21,7 @@ Loading Results
 Command Line Arguments
 ----------------------
 """
+import os
 import h5py
 import logging
 import numpy as np
@@ -134,7 +135,7 @@ def get_feature(key, data, V=None, scales=None):
     V : (config.DOF*config.NUM_ROMVARS,r) ndarray or None
         Rank-r POD basis. Only needed if data is low-dimensional ROM output.
 
-    scales : (config.NUM_ROMVARS,4) ndarray or None
+    scales : (config.NUM_ROMVARS,2) ndarray or None
         Information for how the data was scaled (see data_processing.scale()).
         Only needed if `data` is low-dimensional ROM output.
 
@@ -485,7 +486,7 @@ def spatial_statistics(trainsize, r1, r2, reg):
         ax.plot(t, feature_gems[key], lw=1, **config.GEMS_STYLE)
         ax.plot(t[:q_rom.shape[1]], feature_rom, lw=1, **config.ROM_STYLE)
         ax.axvline(t[trainsize], color='k')
-        ax.set_ylabel(config.VARLABELS[var])
+        ax.set_ylabel(config.VARLABELS[key.split('_')[0]])
         ax.locator_params(axis='y', nbins=2)
 
     # Set titles, labels, ticks, and draw a single legend.
@@ -555,8 +556,6 @@ def main(trainsize, r1, r2, reg, elems,
     if plotCorrelation:
         logging.info("CORRELATIONS IN TIME")
         corrcoef(trainsize, r1, r2, reg)
-
-    return
 
 
 def projection_errors(trainsize, rs):

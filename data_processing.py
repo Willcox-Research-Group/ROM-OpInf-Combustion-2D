@@ -129,7 +129,7 @@ def scale(data, scales=None, variables=None):
     scales : (NUM_ROMVARS, 2) ndarray or None
         Shifting and scaling factors. If None, learn the factors from the data:
             scales[i] = [shift, max(abs(raw_variable[i] - shift))],
-        where shift = median(raw_variable[i]) for pressure, temperature, and
+        where shift = mean(raw_variable[i]) for pressure, temperature, and
         specific volume, and shift = 0 for the other variables.
 
     variables : list(str)
@@ -177,7 +177,7 @@ def scale(data, scales=None, variables=None):
         if learning:
             assert i == vidx
             if variables[i] in ["p", "T", "xi"]:
-                scales[i,0] = np.median(data[s])
+                scales[i,0] = np.mean(data[s])
                 shifted = data[s] - scales[i,0]
             else:
                 scales[i,0] = 0
