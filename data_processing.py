@@ -185,7 +185,7 @@ def scale(data, scales=None, variables=None):
             scales[i,1] = np.abs(shifted).max()
             data[s] = shifted / scales[i,1]
         else:
-            data[s] = (data[s] - scales[i,0]) / scales[i,1]
+            data[s] = (data[s] - scales[vidx,0]) / scales[vidx,1]
 
     # Report info on the learned scaling.
     if learning:
@@ -263,6 +263,6 @@ def unscale(data, scales, variables=None):
     # Do the unscaling by variable.
     for i,vidx in enumerate(varindices):
         s = slice(i*chunksize,(i+1)*chunksize)
-        data[s] = (data[s] * scales[i,1]) + scales[i,0]
+        data[s] = (data[s] * scales[vidx,1]) + scales[vidx,0]
 
     return data
