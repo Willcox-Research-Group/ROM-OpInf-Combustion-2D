@@ -39,7 +39,7 @@ def compute_and_save_pod_basis(num_modes, training_data, scales):
     ----------
     num_modes : int
         Number of POD modes to compute for each set of variables
-        (everything-but-temperature and temperature-only).
+        (pressure-and-velocities and everything-else).
 
     training_data : (NUM_ROMVARS*DOF,trainsize) ndarray
         Training snapshots to take the SVD of.
@@ -52,27 +52,29 @@ def compute_and_save_pod_basis(num_modes, training_data, scales):
     V : (NUM_ROMVARS*DOF,r) ndarray
         POD basis of rank r = 2*num_modes.
     """
-    # Split the training data into T and non-T blocks.
-    notT = np.row_stack([dproc.getvar(v, training_data)
-                         for v in config.ROM_VARIABLES if v != "T"])
-    T = dproc.getvar("T", training_data)
+    # Split the training data into blocks.
+    vars1 = ["p", "vx", "vy"]
+    data1 = np.row_stack([dproc.getvar(v, training_data) for v in vars1])
+    data2 = np.row_stack([dproc.getvar(v, training_data)
+                          for v in config.ROM_VARIABLES if v not in vars1])
 
     # Compute the randomized SVD from the training data.
-    with utils.timed_block(f"Computing {num_modes}-component rSVD (not T)"):
-        V1, svdvals1 = roi.pre.pod_basis(notT, r=num_modes, mode="randomized",
+    with utils.timed_block(f"Computing {num_modes}-component rSVD (p, v)"):
+        V1, svdvals1 = roi.pre.pod_basis(data1, r=num_modes, mode="randomized",
                                          n_iter=15, random_state=42)
 
-    with utils.timed_block(f"Computing {num_modes}-component rSVD (T)"):
-        V2, svdvals2 = roi.pre.pod_basis(T, r=num_modes, mode="randomized",
+    with utils.timed_block(f"Computing {num_modes}-component rSVD (other)"):
+        V2, svdvals2 = roi.pre.pod_basis(data2, r=num_modes, mode="randomized",
                                          n_iter=15, random_state=42)
+
     # Save the POD basis.
     save_path = config.basis_path(training_data.shape[1])
     with utils.timed_block(f"Saving POD basis"):
         with h5py.File(save_path, 'w') as hf:
-            hf.create_dataset("notT/V", data=V1)
-            hf.create_dataset("notT/svdvals", data=svdvals1)
-            hf.create_dataset("T/V", data=V2)
-            hf.create_dataset("T/svdvals", data=svdvals2)
+            hf.create_dataset("basis1/V", data=V1)
+            hf.create_dataset("basis1/svdvals", data=svdvals1)
+            hf.create_dataset("basis2/V", data=V2)
+            hf.create_dataset("basis2/svdvals", data=svdvals2)
             hf.create_dataset("scales", data=scales)
     logging.info(f"POD bases of rank {num_modes} saved to {save_path}.\n")
 

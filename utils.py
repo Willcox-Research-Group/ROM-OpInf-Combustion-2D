@@ -232,18 +232,19 @@ def load_basis(trainsize, r1, r2):
         The number of snapshots used when the SVD was computed.
 
     r1 : int
-        The number of left singular vectors to load for the NON-T basis.
+        The number of left singular vectors to load for the first basis
+        (pressure and velocities).
 
     r2 : int
-        The number of left singular vectors to load for the T-only basis.
+        The number of left singular vectors to load for the second basis
+        (temperature, specific volume, and chemical species).
 
     Returns
     -------
     V : (NUM_ROMVARS*DOF,r1+r2) ndarray
-        Complete block-structure POD basis with r1 columns for all variables
-        except temperature and r2 columns exclusively for temperature.
+        Complete block-structure POD basis.
 
-    scales : (NUM_ROMVARS,4) ndarray
+    scales : (NUM_ROMVARS,2) ndarray
         The min/max factors used to scale the variables before projecting.
     """
     # Locate the data.
@@ -253,16 +254,16 @@ def load_basis(trainsize, r1, r2):
     with timed_block(f"Loading POD basis from {data_path}"):
         with h5py.File(data_path, 'r') as hf:
             # Check data shapes.
-            rmax1 = hf["notT/V"].shape[1]
+            rmax1 = hf["basis1/V"].shape[1]
             if r1 is not None and rmax1 < r1:
-                raise ValueError(f"non-T basis only has {rmax1} columns")
-            rmax2 = hf["notT/V"].shape[1]
+                raise ValueError(f"first basis only has {rmax1} columns")
+            rmax2 = hf["basis1/V"].shape[1]
             if r2 is not None and rmax2 < r2:
                 raise ValueError(f"T basis only has {rmax2} columns")
 
             # Load the data.
-            V1 = hf["notT/V"][:,:r1]
-            V2 = hf["T/V"][:,:r2]
+            V1 = hf["basis1/V"][:,:r1]
+            V2 = hf["basis2/V"][:,:r2]
             scales = hf["scales"][:]
 
         # Put the two basis blocks together, preserving variable order.
@@ -273,35 +274,33 @@ def _assemble_basis(V1, V2):
     """Piece the two bases together in a block structure, preserving
     the order of the variables as given in the configuration file, i.e.,
 
-            [V1a   0]
-        V = [ 0   V2]
-            [V1b   0].
+            [V1   0]
+        V = [ 0  V2].
 
     Parameters
     ----------
     V1 : ((NUM_ROMVARS-1)*DOF,r1) ndarray
-        POD basis for all variables except temperature.
+        POD basis for pressure and velocities.
 
     V2 : (DOF,r2) ndarray
-        POD basis for temperature only.
+        POD basis for temperature, specific volume, and chemical species.
 
     Returns
     -------
     V : (NUM_ROMVARS*DOF,r1+r2) ndarray
-        Complete block-structure POD basis with r1 columns for all variables
-        except temperature and r2 columns exclusively for temperature.
+        Complete block-structure POD basis.
     """
+    # Check shapes.
     N = config.DOF * config.NUM_ROMVARS
     if V1.shape[0] + V2.shape[0] != N:
         raise RuntimeError("illegal basis size (row count off)")
     r1, r2 = V1.shape[1], V2.shape[1]
-    n1 = config.ROM_VARIABLES.index("T")*config.DOF
-    n2 = n1 + config.DOF
+    n1 = V1.shape[0]
 
+    # Assemble block-diagonal matrix.
     V = np.zeros((N,r1+r2))
-    V[:n1,:r1] = V1[:n1]
-    V[n1:n2,r1:] = V2
-    V[n2:,:r1] = V1[n1:]
+    V[:n1,:r1] = V1
+    V[n1:,r1:] = V2
 
     return V
 
@@ -318,18 +317,18 @@ def get_basis_size(trainsize):
     -------
     r1 : int
         Number of left singular vectors that have been saved for the
-        non-temperature basis.
+        first basis.
 
     r2 : int
         Number of left singular vectors that have been saved for the
-        temperature-only basis.
+        second basis.
     """
     # Locate the data.
     data_path = _checkexists(config.basis_path(trainsize))
 
     # Extract the data.
     with h5py.File(data_path, 'r') as hf:
-        return hf["notT/V"].shape[1], hf["T/V"].shape[1]
+        return hf["basis1/V"].shape[1], hf["basis2/V"].shape[1]
 
 
 def load_projected_data(trainsize, r1, r2):
@@ -342,10 +341,10 @@ def load_projected_data(trainsize, r1, r2):
         snapshots that were used when the POD basis (SVD) was computed.
 
     r1 : int
-        The number of retained POD modes used in the NON-T projection.
+        The number of retained POD modes used in the first projection.
 
     r2 : int
-        The number of retained POD modes used in the T-only projection.
+        The number of retained POD modes used in the second projection.
 
     Returns
     -------
@@ -370,9 +369,9 @@ def load_projected_data(trainsize, r1, r2):
             if hf["data"].shape[0] != R1 + R2:
                 raise RuntimeError(f"data sets 'data' and 'rs' not aligned")
             if R1 < r1:
-                raise ValueError(f"Non-T data only projected to {R1} modes")
+                raise ValueError(f"first basis only has {R1} modes")
             if R2 < r2:
-                raise ValueError(f"T data only projected to {R1} modes")
+                raise ValueError(f"second basis only has {R2} modes")
             if hf["data"].shape[1] != trainsize:
                 raise RuntimeError(f"data set 'data' has incorrect shape")
             if hf["ddt"].shape != hf["data"].shape:
@@ -397,11 +396,11 @@ def load_rom(trainsize, r1, r2, reg):
 
     r1 : int
         Number of retained POD modes (left singular vectors) used to project
-        the non-temperature training data.
+        the training data with the first basis.
 
     r2 : int
         Number of retained POD modes (left singular vectors) used to project
-        the temperature training data.
+        the training data with the second basis.
 
     reg : float
         The regularization factor used in the Operator Inference least-squares
