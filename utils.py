@@ -233,11 +233,11 @@ def load_basis(trainsize, r1, r2):
 
     r1 : int
         The number of left singular vectors to load for the first basis
-        (pressure and velocities).
+        (everything except temperature).
 
     r2 : int
         The number of left singular vectors to load for the second basis
-        (temperature, specific volume, and chemical species).
+        (temperature only).
 
     Returns
     -------
@@ -259,7 +259,7 @@ def load_basis(trainsize, r1, r2):
                 raise ValueError(f"first basis only has {rmax1} columns")
             rmax2 = hf["basis1/V"].shape[1]
             if r2 is not None and rmax2 < r2:
-                raise ValueError(f"T basis only has {rmax2} columns")
+                raise ValueError(f"second basis only has {rmax2} columns")
 
             # Load the data.
             V1 = hf["basis1/V"][:,:r1]
@@ -274,16 +274,17 @@ def _assemble_basis(V1, V2):
     """Piece the two bases together in a block structure, preserving
     the order of the variables as given in the configuration file, i.e.,
 
-            [V1   0]
-        V = [ 0  V2].
+            [V1a   0]
+        V = [ 0   V2]
+            [V1b   0].
 
     Parameters
     ----------
     V1 : ((NUM_ROMVARS-1)*DOF,r1) ndarray
-        POD basis for pressure and velocities.
+        POD basis for all variables except temperature.
 
     V2 : (DOF,r2) ndarray
-        POD basis for temperature, specific volume, and chemical species.
+        POD basis for temperature only.
 
     Returns
     -------
@@ -295,12 +296,14 @@ def _assemble_basis(V1, V2):
     if V1.shape[0] + V2.shape[0] != N:
         raise RuntimeError("illegal basis size (row count off)")
     r1, r2 = V1.shape[1], V2.shape[1]
-    n1 = V1.shape[0]
+    n1 = config.ROM_VARIABLES.index("T") * config.DOF
+    n2 = n1 + config.DOF
 
-    # Assemble block-diagonal matrix.
+    # Assemble block matrix.
     V = np.zeros((N,r1+r2))
-    V[:n1,:r1] = V1
-    V[n1:,r1:] = V2
+    V[:n1,:r1] = V1[:n1]
+    V[n1:n2,r1:] = V2
+    V[n2:,:r1] = V1[n1:]
 
     return V
 

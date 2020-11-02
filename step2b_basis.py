@@ -39,7 +39,7 @@ def compute_and_save_pod_basis(num_modes, training_data, scales):
     ----------
     num_modes : int
         Number of POD modes to compute for each set of variables
-        (pressure-and-velocities and everything-else).
+        (everything-but-temperature and temperature-only).
 
     training_data : (NUM_ROMVARS*DOF,trainsize) ndarray
         Training snapshots to take the SVD of.
@@ -53,17 +53,16 @@ def compute_and_save_pod_basis(num_modes, training_data, scales):
         POD basis of rank r = 2*num_modes.
     """
     # Split the training data into blocks.
-    vars1 = ["p", "vx", "vy"]
-    data1 = np.row_stack([dproc.getvar(v, training_data) for v in vars1])
-    data2 = np.row_stack([dproc.getvar(v, training_data)
-                          for v in config.ROM_VARIABLES if v not in vars1])
+    data1 = np.row_stack([dproc.getvar(v, training_data)
+                          for v in config.ROM_VARIABLES if v != "T"])
+    data2 = dproc.getvar("T", training_data)
 
     # Compute the randomized SVD from the training data.
-    with utils.timed_block(f"Computing {num_modes}-component rSVD (p, v)"):
+    with utils.timed_block(f"Computing {num_modes}-component rSVD (non-T)"):
         V1, svdvals1 = roi.pre.pod_basis(data1, r=num_modes, mode="randomized",
                                          n_iter=15, random_state=42)
 
-    with utils.timed_block(f"Computing {num_modes}-component rSVD (other)"):
+    with utils.timed_block(f"Computing {num_modes}-component rSVD (T)"):
         V2, svdvals2 = roi.pre.pod_basis(data2, r=num_modes, mode="randomized",
                                          n_iter=15, random_state=42)
 
