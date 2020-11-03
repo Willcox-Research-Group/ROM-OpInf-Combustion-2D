@@ -90,7 +90,7 @@ R_UNIVERSAL = 8.3144598                     # Univ. gas constant [J/(mol K)].
 
 # ROM Structure ---------------------------------------------------------------
 
-MODELFORM = "cAHB"                          # ROM operators to be inferred.
+MODELFORM = "cAHGB"                         # ROM operators to be inferred.
 
 # Input function (Pressure oscillation) ---------------------------------------
 

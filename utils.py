@@ -430,6 +430,8 @@ def load_rom(trainsize, r1, r2, reg):
 
     rom.trainsize = trainsize
     rom.reg = reg
+    rom.r1 = r1
+    rom.r2 = r2
     return rom
 
 

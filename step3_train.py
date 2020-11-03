@@ -75,6 +75,7 @@ import rom_operator_inference as roi
 
 import config
 import utils
+import combustion_rom as crom
 
 
 _MAXFUN = 100               # Artificial ceiling for optimization routine.
@@ -82,14 +83,15 @@ _MAXFUN = 100               # Artificial ceiling for optimization routine.
 
 # Subroutines =================================================================
 
-def _check_dofs(trainsize, r):
+def _check_dofs(trainsize, r, r1=0):
     """Report the number of unknowns in the Operator Inference problem,
     compared to the number of snapshots. Ask user for confirmation before
     attempting to solve an underdetermined problem.
     """
+    _r13 = r1*(r1 + 1)*(r1 + 2)//6
     # Print info on the size of the system to be solved.
     d = roi.lstsq.lstsq_size(config.MODELFORM, r, m=1)
-    message = f"{trainsize} snapshots, {r}x{d} DOFs ({r*d} total)"
+    message = f"{trainsize} snapshots, {r}x{d} DOFs ({r*d - _r13} total)"
     print(message)
     logging.info(message)
 
@@ -120,7 +122,7 @@ def is_bounded(q_rom, B, message="ROM violates bound"):
     return True
 
 
-def save_best_trained_rom(trainsize, r1, r2, reg, rom):
+def save_trained_rom(trainsize, r1, r2, reg, rom):
     """Save the trained ROM with the specified attributes.
 
     Parameters
@@ -143,9 +145,10 @@ def save_best_trained_rom(trainsize, r1, r2, reg, rom):
         Actual trained ROM object. Must have a `save_model()` method.
     """
     save_path = config.rom_path(trainsize, r1, r2, reg)
-    with utils.timed_block("Best regularization for "
-                           f"r1={r1:d}, r2={r2:d}: {reg:.0f}"):
-        rom.save_model(save_path, save_basis=False, overwrite=True)
+    romcopy = roi.InferredContinuousROM(config.MODELFORM)
+    romcopy._set_operators(None, c_=rom.c_, A_=rom.A_,
+                           Hc_=rom.Hc_, Gc_=rom.Gc_, B_=rom.B_)
+    romcopy.save_model(save_path, save_basis=False, overwrite=True)
     logging.info(f"ROM saved to {save_path}")
 
 
@@ -171,7 +174,7 @@ def train_and_save_all(trainsize, r1, r2, regs):
         regularization parameter(s) to use in the training.
     """
     utils.reset_logger(trainsize)
-    _check_dofs(trainsize, r1 + r2)
+    _check_dofs(trainsize, r1 + r2, r1)
 
     logging.info(f"TRAINING {len(regs)} ROMS")
 
@@ -184,17 +187,15 @@ def train_and_save_all(trainsize, r1, r2, regs):
     # Create a solver mapping regularization parameters to operators.
     with utils.timed_block("Constructing/factoring data matrix, "
                            f"r1={r1:d}, r2={r2:d}"):
-        rom = roi.InferredContinuousROM(config.MODELFORM)
-        Q_, Qdot_, U = rom._process_fit_arguments(None, Q_, Qdot_, U)
-        solver = roi.lstsq.LstsqSolverL2(compute_extras=False)
-        solver.fit(rom._construct_data_matrix(Q_, U), Qdot_.T)
+        rom = crom.CombustionROM(r1, r2)
+        rom.construct_solver(Q_, Qdot_, U)
 
     # Train and save each ROM.
     for reg in regs:
-        with utils.timed_block(f"Training ROM with r={r:d}, reg={reg:e}"):
-            rom._extract_operators(solver.predict(reg).T)
-            rom.save_model(config.rom_path(trainsize, r1, r2, reg),
-                           save_basis=False, overwrite=True)
+        with utils.timed_block("Training ROM with "
+                               f"r1={r1:d}, r2={r2:d}, reg={reg:e}"):
+            rom.evaluate_solver(reg)
+            save_trained_rom(trainsize, r1, r2, reg, rom)
 
 
 def train_with_gridsearch(trainsize, r1, r2, regs,
@@ -228,7 +229,7 @@ def train_with_gridsearch(trainsize, r1, r2, regs,
         data Q, i.e., bound = margin * max(abs(Q)).
     """
     utils.reset_logger(trainsize)
-    _check_dofs(trainsize, r1 + r2)
+    _check_dofs(trainsize, r1 + r2, r1)
 
     # Parse aguments.
     if np.isscalar(regs):
@@ -236,7 +237,6 @@ def train_with_gridsearch(trainsize, r1, r2, regs,
 
     # Load the full time domain and evaluate the input function.
     t = utils.load_time_domain(testsize)
-    U = config.U(t)
 
     rom = roi.InferredContinuousROM(config.MODELFORM)
     logging.info(f"TRAINING {len(regs)} ROMS")
@@ -250,10 +250,8 @@ def train_with_gridsearch(trainsize, r1, r2, regs,
     # Create a solver mapping regularization parameters to operators.
     with utils.timed_block("Constructing/factoring data matrix, "
                            f"r1={r1:d}, r2={r2:d}"):
-        Q_, Qdot_, Utrain = rom._process_fit_arguments(None, Q_, Qdot_,
-                                                             U[:trainsize])
-        solver = roi.lstsq.LstsqSolverL2(compute_extras=False)
-        solver.fit(rom._construct_data_matrix(Q_, Utrain), Qdot_.T)
+        rom = crom.CombustionROM(r1, r2)
+        rom.construct_solver(Q_, Qdot_, config.U(t[:trainsize]))
 
     # Test each regularization parameter.
     trained_roms = {}
@@ -264,7 +262,7 @@ def train_with_gridsearch(trainsize, r1, r2, regs,
         # Train the ROM on all training snapshots.
         with utils.timed_block("Testing ROM with "
                                f"r1={r1:d}, r2={r2:d}, reg={reg:e}"):
-            rom._extract_operators(solver.predict(reg).T)
+            rom.evaluate_solver(reg)
             rom._construct_f_()
             trained_roms[reg] = rom
 
@@ -291,8 +289,9 @@ def train_with_gridsearch(trainsize, r1, r2, regs,
 
     err2reg = {err:reg for reg,err in errors_pass.items()}
     best_reg = err2reg[min(err2reg.keys())]
-    best_rom = trained_roms[best_reg]
-    save_best_trained_rom(trainsize, r1, r2, best_reg, best_rom)
+    with utils.timed_block("Best regularization for"
+                           f"r1={r1:d}, r2={rd:d}: {best_reg:.0f}"):
+        save_trained_rom(trainsize, r1, r2, best_reg, trained_roms[best_reg])
 
     plt.semilogx(list(errors_pass.keys()), list(errors_pass.values()),
                  f"C0*", mew=0,
@@ -342,7 +341,7 @@ def train_with_minimization(trainsize, r1, r2, regs,
         data Q, i.e., bound = margin * max(abs(Q)).
     """
     utils.reset_logger(trainsize)
-    _check_dofs(trainsize, r1 + r2)
+    _check_dofs(trainsize, r1 + r2, r1)
 
     # Parse aguments.
     if np.isscalar(regs) or len(regs) != 2:
@@ -353,8 +352,6 @@ def train_with_minimization(trainsize, r1, r2, regs,
     t = utils.load_time_domain(testsize)
     U = config.U(t)
 
-    rom = roi.InferredContinuousROM(config.MODELFORM)
-
     # Load training data.
     Q_, Qdot_, _ = utils.load_projected_data(trainsize, r1, r2)
 
@@ -364,10 +361,8 @@ def train_with_minimization(trainsize, r1, r2, regs,
     # Create a solver mapping regularization parameters to operators.
     with utils.timed_block("Constructing/factoring data matrix, "
                            f"r1={r1:d}, r2={r2:d}"):
-        Q_, Qdot_, Utrain = rom._process_fit_arguments(None, Q_, Qdot_,
-                                                             U[:trainsize])
-        solver = roi.lstsq.LstsqSolverL2(compute_extras=False)
-        solver.fit(rom._construct_data_matrix(Q_, Utrain), Qdot_.T)
+        rom = crom.CombustionROM(r1, r2)
+        rom.construct_solver(Q_, Qdot_, U[:trainsize])
 
     # Test each regularization parameter.
     def training_error_from_rom(log10reg):
@@ -376,7 +371,7 @@ def train_with_minimization(trainsize, r1, r2, regs,
         # Train the ROM on all training snapshots.
         with utils.timed_block("Testing ROM with "
                                f"r1={r1:d}, r2={r2:d}, reg={reg:e}"):
-            rom._extract_operators(solver.predict(reg).T)
+            rom.evaluate_solver(reg)
             rom._construct_f_()
 
             # Simulate the ROM over the full domain.
@@ -395,11 +390,14 @@ def train_with_minimization(trainsize, r1, r2, regs,
                                      bounds=bounds, method="bounded")
     if opt_result.success and opt_result.fun != _MAXFUN:
         best_reg = 10 ** opt_result.x
-        rom._extract_operators(solver.predict(best_reg).T)
-        save_best_trained_rom(trainsize, r1, r2, best_reg, rom)
+        with utils.timed_block("Best regularization for"
+                               f"r1={r1:d}, r2={rd:d}: {reg:.0f}"):
+            rom.evaluate_solver(best_reg)
+            save_trained_rom(trainsize, r1, r2, best_reg, rom)
     else:
-        print("Regularization search optimization FAILED "
-              f"for r1={r1:d}, r2={r2:d}")
+        message = "Regularization search optimization FAILED"
+        print(message)
+        logging.info(message)
 
 
 # =============================================================================
