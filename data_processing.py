@@ -177,13 +177,13 @@ def scale(data, scales=None, variables=None):
         if learning:
             assert i == vidx
             if variables[i] in ["p", "T", "xi"]:
-                scales[i,0] = np.mean(data[s])
-                shifted = data[s] - scales[i,0]
+                scales[vidx,0] = np.mean(data[s])
+                shifted = data[s] - scales[vidx,0]
             else:
-                scales[i,0] = 0
+                scales[vidx,0] = 0
                 shifted = data[s]
-            scales[i,1] = np.abs(shifted).max()
-            data[s] = shifted / scales[i,1]
+            scales[vidx,1] = np.abs(shifted).max()
+            data[s] = shifted / scales[vidx,1]
         else:
             data[s] = (data[s] - scales[vidx,0]) / scales[vidx,1]
 
