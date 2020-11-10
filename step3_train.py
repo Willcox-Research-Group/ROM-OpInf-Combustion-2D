@@ -67,6 +67,7 @@ Command Line Arguments
 """
 import h5py
 import logging
+import itertools
 import numpy as np
 import scipy.optimize as opt
 import matplotlib.pyplot as plt
@@ -188,13 +189,13 @@ def train_and_save_all(trainsize, r1, r2, regs):
     with utils.timed_block("Constructing/factoring data matrix, "
                            f"r1={r1:d}, r2={r2:d}"):
         rom = crom.CombustionROM(r1, r2)
-        rom.construct_solver(Q_, Qdot_, U)
+        solver = rom.construct_solver(Q_, Qdot_, U)
 
     # Train and save each ROM.
     for reg in regs:
         with utils.timed_block("Training ROM with "
                                f"r1={r1:d}, r2={r2:d}, reg={reg:e}"):
-            rom.evaluate_solver(reg)
+            rom.evaluate_solver(solver, reg)
             save_trained_rom(trainsize, r1, r2, reg, rom)
 
 
@@ -251,7 +252,7 @@ def train_with_gridsearch(trainsize, r1, r2, regs,
     with utils.timed_block("Constructing/factoring data matrix, "
                            f"r1={r1:d}, r2={r2:d}"):
         rom = crom.CombustionROM(r1, r2)
-        rom.construct_solver(Q_, Qdot_, config.U(t[:trainsize]))
+        solver = rom.construct_solver(Q_, Qdot_, config.U(t[:trainsize]))
 
     # Test each regularization parameter.
     trained_roms = {}
@@ -262,7 +263,7 @@ def train_with_gridsearch(trainsize, r1, r2, regs,
         # Train the ROM on all training snapshots.
         with utils.timed_block("Testing ROM with "
                                f"r1={r1:d}, r2={r2:d}, reg={reg:e}"):
-            rom.evaluate_solver(reg)
+            rom.evaluate_solver(solver, reg)
             rom._construct_f_()
             trained_roms[reg] = rom
 
@@ -290,7 +291,7 @@ def train_with_gridsearch(trainsize, r1, r2, regs,
     err2reg = {err:reg for reg,err in errors_pass.items()}
     best_reg = err2reg[min(err2reg.keys())]
     with utils.timed_block("Best regularization for"
-                           f"r1={r1:d}, r2={rd:d}: {best_reg:.0f}"):
+                           f"r1={r1:d}, r2={r2:d}: {best_reg:.0f}"):
         save_trained_rom(trainsize, r1, r2, best_reg, trained_roms[best_reg])
 
     plt.semilogx(list(errors_pass.keys()), list(errors_pass.values()),
@@ -362,7 +363,7 @@ def train_with_minimization(trainsize, r1, r2, regs,
     with utils.timed_block("Constructing/factoring data matrix, "
                            f"r1={r1:d}, r2={r2:d}"):
         rom = crom.CombustionROM(r1, r2)
-        rom.construct_solver(Q_, Qdot_, U[:trainsize])
+        solver = rom.construct_solver(Q_, Qdot_, U[:trainsize])
 
     # Test each regularization parameter.
     def training_error_from_rom(log10reg):
@@ -371,7 +372,7 @@ def train_with_minimization(trainsize, r1, r2, regs,
         # Train the ROM on all training snapshots.
         with utils.timed_block("Testing ROM with "
                                f"r1={r1:d}, r2={r2:d}, reg={reg:e}"):
-            rom.evaluate_solver(reg)
+            rom.evaluate_solver(solver, reg)
             rom._construct_f_()
 
             # Simulate the ROM over the full domain.
@@ -391,13 +392,116 @@ def train_with_minimization(trainsize, r1, r2, regs,
     if opt_result.success and opt_result.fun != _MAXFUN:
         best_reg = 10 ** opt_result.x
         with utils.timed_block("Best regularization for"
-                               f"r1={r1:d}, r2={rd:d}: {reg:.0f}"):
+                               f"r1={r1:d}, r2={r2:d}: {reg:.0f}"):
             rom.evaluate_solver(best_reg)
             save_trained_rom(trainsize, r1, r2, best_reg, rom)
     else:
         message = "Regularization search optimization FAILED"
         print(message)
         logging.info(message)
+
+
+def train_multi_gridsearch(trainsize, r1, r2, regs,
+                           testsize=None, margin=1.5):
+    """Train ROMs with the given dimension(s) and regularization(s),
+    saving only the ROM with the least training error that satisfies
+    a bound on the integrated POD coefficients.
+
+    Parameters
+    ----------
+    trainsize : int
+        Number of snapshots to use to train the ROM(s).
+
+    r1 : int
+        Number of retained POD modes (left singular vectors) used to project
+        the non-temperature training data.
+
+    r2 : int
+        Number of retained POD modes (left singular vectors) used to project
+        the temperature training data.
+
+    regs : list of 6 floats
+        Bounds for the regularization parameters to use in the training.
+        Linear:     [regs[0], regs[1]]
+        Quadratic:  [regs[2], regs[3]]
+        Cubic:      [regs[4], regs[5]]
+        then we search over a 3D grid to allow different regularization of the
+        linear, quadratic, and cubic terms.
+
+    testsize : int
+        Number of time steps for which a valid ROM must satisfy the POD bound.
+
+    margin : float >= 1
+        Amount that the integrated POD coefficients of a valid ROM are allowed
+        to deviate in magnitude from the maximum magnitude of the training
+        data Q, i.e., bound = margin * max(abs(Q)).
+    """
+    utils.reset_logger(trainsize)
+    _check_dofs(trainsize, r1 + r2, r1)
+
+    # Parse aguments.
+    if len(regs) != 6:
+        print(regs)
+        raise ValueError("regs must be bounds for grid search")
+    λ1grid = np.logspace(np.log10(regs[0]), np.log10(regs[1]), 20)
+    λ2grid = np.logspace(np.log10(regs[2]), np.log10(regs[3]), 20)
+    λ3grid = np.logspace(np.log10(regs[4]), np.log10(regs[5]), 20)
+
+    # Load the full time domain and evaluate the input function.
+    t = utils.load_time_domain(testsize)
+
+    rom = roi.InferredContinuousROM(config.MODELFORM)
+    logging.info(f"TRAINING {10**3} ROMS")
+
+    # Load training data.
+    Q_, Qdot_, _ = utils.load_projected_data(trainsize, r1, r2)
+
+    # Compute the bound to require for integrated POD modes.
+    M = margin * np.abs(Q_).max()
+
+    # Create a solver mapping regularization parameters to operators.
+    with utils.timed_block("Constructing data matrix / prepping solver, "
+                           f"r1={r1:d}, r2={r2:d}"):
+        rom = crom.CombustionROM(r1, r2)
+        solver = rom.construct_solver(Q_, Qdot_, config.U(t[:trainsize]))
+
+    # Test each regularization parameter.
+    trained_roms = {}
+    errors_pass = {}
+    errors_fail = {}
+    for λ1,λ2,λ3 in itertools.product(λ1grid, λ2grid, λ3grid):
+        # Train the ROM on all training snapshots.
+        with utils.timed_block("Testing ROM with "
+                               f"r1={r1:d}, r2={r2:d}, "
+                               f"λ1={λ1:5e}, λ2={λ2:5e}, λ3={λ3:5e}"):
+            rom.evaluate_solver(solver, λ1, λ2, λ3)
+            rom._construct_f_()
+            trained_roms[(λ1,λ2,λ3)] = rom
+
+            # Simulate the ROM over the full domain.
+            with np.warnings.catch_warnings():
+                np.warnings.simplefilter("ignore")
+                q_rom = rom.predict(Q_[:,0], t, config.U, method="RK45")
+
+            # Check for boundedness of solution.
+            errors = errors_pass if is_bounded(q_rom, M) else errors_fail
+
+            # Calculate integrated relative errors in the reduced space.
+            if q_rom.shape[1] > trainsize:
+                errors[(λ1,λ2,λ3)] = roi.post.Lp_error(Q_, q_rom[:,:trainsize],
+                                                       t[:trainsize])[1]
+
+    # Choose and save the ROM with the least error.
+    if not errors_pass:
+        print(f"NO STABLE ROMS for r1={r1:d}, r2={r2:d}")
+        return
+
+    err2reg = {err:reg for reg,err in errors_pass.items()}
+    λ1,λ2,λ3 = err2reg[min(err2reg.keys())]
+    with utils.timed_block(f"Best regularization for r1={r1:d}, r2={r2:d}: "
+                           f"λ1={λ1:5e}, λ2={λ2:5e}, λ3={λ3:5e}"):
+        save_trained_rom(trainsize, r1, r2, λ1, trained_roms[(λ1,λ2,λ3)])
+        # SAVE KEY IS THE FIRST PARAMETER!!!!
 
 
 # =============================================================================
@@ -431,6 +535,9 @@ if __name__ == "__main__":
     group.add_argument("--minimize", action="store_true",
                        help="find the best regularization within an "
                             "interval via minimize scalar minimization")
+    group.add_argument("--multi", action="store_true",
+                       help="grid search with multiple regularization "
+                            "parameters (linear, quadratic, cubic)")
 
     # Main positional arguments.
     parser.add_argument("-r1", type=int, required=True,
@@ -473,3 +580,6 @@ if __name__ == "__main__":
     elif args.minimize:
         train_with_minimization(args.trainsize, args.r1, args.r2, regs,
                                 args.testsize, args.margin)
+    elif args.multi:
+        train_multi_gridsearch(args.trainsize, args.r1, args.r2,
+                               args.regularization, args.testsize, args.margin)

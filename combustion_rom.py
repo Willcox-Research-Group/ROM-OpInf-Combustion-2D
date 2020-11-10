@@ -13,7 +13,7 @@ import rom_operator_inference as roi
 
 class MultiLstsqSolver(roi.lstsq._tikhonov._BaseLstsqSolver):
     """Encapsulate multiple least-squares solvers."""
-    def fit(self, As, Bs, SolverClass=roi.lstsq.LstsqSolverL2):
+    def fit(self, As, Bs, SolverClass):
         """Initialize and fit a solver for each pair of inputs."""
         # Check inputs.
         if len(As) != len(Bs):
@@ -22,13 +22,14 @@ class MultiLstsqSolver(roi.lstsq._tikhonov._BaseLstsqSolver):
             raise TypeError("invalid SolverClass")
 
         # Fit each solver.
-        self.solvers_ = [SolverClass(compute_extras=False).fit(A,B)
+        self.solvers_ = [SolverClass(compute_extras=False,
+                                     check_regularizer=False).fit(A,B)
                          for A,B in zip(As, Bs)]
         return self
 
-    def predict(self, P):
+    def predict(self, Ps):
         """Predict with each solver."""
-        return [solver.predict(P) for solver in self.solvers_]
+        return [solver.predict(P) for solver, P in zip(self.solvers_, Ps)]
 
 
 class CombustionROM(roi.InferredContinuousROM):
@@ -135,9 +136,23 @@ class CombustionROM(roi.InferredContinuousROM):
             raise ValueError("reduced dimensions not aligned (r != r1 + r2)")
         Ds = self._assemble_data_matrices(X_, U)
         Rs = np.split(rhs_.T, [self.r1], axis=1)
-        self.solver_ = MultiLstsqSolver().fit(Ds, Rs, roi.lstsq.LstsqSolverL2)
-        return self
+        return MultiLstsqSolver().fit(Ds, Rs,
+                                      roi.lstsq.LstsqSolverTikhonov)
 
-    def evaluate_solver(self, λ):
-        Otrps = self.solver_.predict(λ)
+    def evaluate_solver(self, solver, λ1, λ2, λ3):
+        """Evaluate the least-squares solver at the given regularization
+        values, and save the resulting operators.
+        """
+        # Get block sizes for quadratic / cubic operators.
+        r2 = self.r*(self.r + 1)//2
+        r3 = self.r*(self.r + 1)*(self.r + 2)//6
+
+        # Construct the regularization matrices.
+        λa = np.zeros(2 + self.r + r2)
+        λa[:(1 + self.r)] = λ1                          # Constant and linear.
+        λa[(1 + self.r):(1 + self.r + r2)] = λ2         # Quadratic.
+        λa[-1] = λ1                                     # Input.
+        λb = np.concatenate([λa[:-1], np.full(r3, λ3), [λ1]])
+
+        Otrps = solver.predict([λa, λb])
         self._extract_operators([O.T for O in Otrps])
