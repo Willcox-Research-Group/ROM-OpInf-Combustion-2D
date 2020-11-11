@@ -38,8 +38,7 @@ def compute_and_save_pod_basis(num_modes, training_data, scales):
     Parameters
     ----------
     num_modes : int
-        Number of POD modes to compute for each set of variables
-        (everything-but-temperature and temperature-only).
+        Number of POD modes to compute.
 
     training_data : (NUM_ROMVARS*DOF,trainsize) ndarray
         Training snapshots to take the SVD of.
@@ -50,34 +49,24 @@ def compute_and_save_pod_basis(num_modes, training_data, scales):
     Returns
     -------
     V : (NUM_ROMVARS*DOF,r) ndarray
-        POD basis of rank r = 2*num_modes.
+        POD basis of rank r.
     """
-    # Split the training data into blocks.
-    data1 = np.row_stack([dproc.getvar(v, training_data)
-                          for v in config.ROM_VARIABLES if v != "T"])
-    data2 = dproc.getvar("T", training_data)
-
     # Compute the randomized SVD from the training data.
-    with utils.timed_block(f"Computing {num_modes}-component rSVD (non-T)"):
-        V1, svdvals1 = roi.pre.pod_basis(data1, r=num_modes, mode="randomized",
-                                         n_iter=15, random_state=42)
-
-    with utils.timed_block(f"Computing {num_modes}-component rSVD (T)"):
-        V2, svdvals2 = roi.pre.pod_basis(data2, r=num_modes, mode="randomized",
-                                         n_iter=15, random_state=42)
+    with utils.timed_block(f"Computing {num_modes}-component randomized SVD"):
+        V, svdvals = roi.pre.pod_basis(training_data, r=num_modes,
+                                       mode="randomized",
+                                       n_iter=15, random_state=42)
 
     # Save the POD basis.
     save_path = config.basis_path(training_data.shape[1])
     with utils.timed_block(f"Saving POD basis"):
         with h5py.File(save_path, 'w') as hf:
-            hf.create_dataset("basis1/V", data=V1)
-            hf.create_dataset("basis1/svdvals", data=svdvals1)
-            hf.create_dataset("basis2/V", data=V2)
-            hf.create_dataset("basis2/svdvals", data=svdvals2)
+            hf.create_dataset("basis", data=V)
+            hf.create_dataset("svdvals", data=svdvals)
             hf.create_dataset("scales", data=scales)
     logging.info(f"POD bases of rank {num_modes} saved to {save_path}.\n")
 
-    return utils._assemble_basis(V1, V2)
+    return V
 
 
 def main(trainsize, num_modes):
@@ -90,9 +79,9 @@ def main(trainsize, num_modes):
     Parameters
     ----------
     trainsize : int
-        The number of snapshots to use in the computation. There must exist
-        a file of exactly `trainsize` lifted, scaled snapshots
-        (see step2a_lift.py).
+        The number of snapshots to use in the computation. There must
+        exist a file of exactly `trainsize` lifted, scaled snapshots
+        (see step2a_transform.py).
 
     num_modes : int or list(int)
         The number of POD modes (left singular vectors) to retain.
@@ -117,8 +106,7 @@ if __name__ == "__main__":
     parser.add_argument("trainsize", type=int,
                         help="number of snapshots in the training data")
     parser.add_argument("modes", type=int,
-                        help="number of left singular vectors/values to save "
-                             " for each subbasis")
+                        help="number of left singular vectors/values to save")
 
     # Do the main routine.
     args = parser.parse_args()

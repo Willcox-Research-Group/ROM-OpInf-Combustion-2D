@@ -45,9 +45,7 @@ def TRNFMT(k):
 
 def DIMFMT(rs):
     """String format for ROM dimensions."""
-    if np.isscalar(rs):
-        rs = [rs]
-    return DIM_PREFIX + '-'.join([f"{r:03d}" for r in rs])
+    return f"{DIM_PREFIX}{r:03d}"
 
 def REGFMT(λ):
     """String format for the regularization parmeter."""
@@ -90,7 +88,7 @@ R_UNIVERSAL = 8.3144598                     # Univ. gas constant [J/(mol K)].
 
 # ROM Structure ---------------------------------------------------------------
 
-MODELFORM = "cAHGB"                         # ROM operators to be inferred.
+MODELFORM = "cAHB"                          # ROM operators to be inferred.
 
 # Input function (Pressure oscillation) ---------------------------------------
 
@@ -189,13 +187,12 @@ def projected_data_path(trainsize):
     return os.path.join(BASE_FOLDER, TRNFMT(trainsize), PROJECTED_DATA_FILE)
 
 
-def rom_path(trainsize, r1, r2, reg):
+def rom_path(trainsize, r, reg):
     """Return the path to the file containing a ROM trained from
-    `trainsize` snapshots, projected to a (r1+r2)-dimensional space,
+    `trainsize` snapshots, projected to an `r`-dimensional space,
     with regularization factor `reg`.
     """
-    folder = _makefolder(BASE_FOLDER,
-                         TRNFMT(trainsize), DIMFMT([r1,r2]))
+    folder = _makefolder(BASE_FOLDER, TRNFMT(trainsize), DIMFMT(r))
     return os.path.join(folder, f"{ROM_PREFIX}_{REGFMT(reg)}.h5")
 
 

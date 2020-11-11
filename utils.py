@@ -192,18 +192,18 @@ def load_scaled_data(trainsize):
     Parameters
     ----------
     trainsize : int
-        The number of snapshots of scaled data to load. See step1b.py.
+        Number of snapshots of scaled data to load. See step2a_transform.py.
 
     Returns
     -------
     Q : (NUM_ROMVARS*DOF,trainsize) ndarray
-        The lifted, scaled data.
+        Lifted, scaled data.
 
     time_domain : (trainsize) ndarray
-        The time domain corresponding to the lifted, scaled data.
+        Time domain corresponding to the lifted, scaled data.
 
     scales : (NUM_ROMVARS,2) ndarray
-        The min/max factors used to scale the variables.
+        Factors used to scale the variables.
     """
     # Locate the data.
     data_path = _checkexists(config.scaled_data_path(trainsize))
@@ -223,29 +223,25 @@ def load_scaled_data(trainsize):
             return hf["data"][:,:], hf["time"][:], hf["scales"][:,:]
 
 
-def load_basis(trainsize, r1, r2):
-    """Load a POD basis and associated singular values.
+def load_basis(trainsize, r):
+    """Load a POD basis and the associated scales.
 
     Parameters
     ----------
     trainsize : int
-        The number of snapshots used when the SVD was computed.
+        Number of snapshots used when the SVD was computed.
 
-    r1 : int
-        The number of left singular vectors to load for the first basis
-        (everything except temperature).
-
-    r2 : int
-        The number of left singular vectors to load for the second basis
-        (temperature only).
+    r : int
+        Number of left singular vectors to load.
 
     Returns
     -------
-    V : (NUM_ROMVARS*DOF,r1+r2) ndarray
-        Complete block-structure POD basis.
+    V : (NUM_ROMVARS*DOF,r) ndarray
+        POD basis of rank `r`, i.e., the first `r` left singular vectors of
+        the training data.
 
     scales : (NUM_ROMVARS,2) ndarray
-        The min/max factors used to scale the variables before projecting.
+        Factors used to scale the variables before projecting.
     """
     # Locate the data.
     data_path = _checkexists(config.basis_path(trainsize))
@@ -254,111 +250,36 @@ def load_basis(trainsize, r1, r2):
     with timed_block(f"Loading POD basis from {data_path}"):
         with h5py.File(data_path, 'r') as hf:
             # Check data shapes.
-            rmax1 = hf["basis1/V"].shape[1]
-            if r1 is not None and rmax1 < r1:
-                raise ValueError(f"first basis only has {rmax1} columns")
-            rmax2 = hf["basis1/V"].shape[1]
-            if r2 is not None and rmax2 < r2:
-                raise ValueError(f"second basis only has {rmax2} columns")
+            rmax = hf["basis"].shape[1]
+            if r is not None and rmax < num_rmodes:
+                raise ValueError(f"basis only has {rmax} columns")
 
             # Load the data.
-            V1 = hf["basis1/V"][:,:r1]
-            V2 = hf["basis2/V"][:,:r2]
-            scales = hf["scales"][:]
-
-        # Put the two basis blocks together, preserving variable order.
-        return _assemble_basis(V1, V2), scales
+            return hf["basis"][:,:r], hf["scales"][:]
 
 
-def _assemble_basis(V1, V2):
-    """Piece the two bases together in a block structure, preserving
-    the order of the variables as given in the configuration file, i.e.,
-
-            [V1a   0]
-        V = [ 0   V2]
-            [V1b   0].
-
-    Parameters
-    ----------
-    V1 : ((NUM_ROMVARS-1)*DOF,r1) ndarray
-        POD basis for all variables except temperature.
-
-    V2 : (DOF,r2) ndarray
-        POD basis for temperature only.
-
-    Returns
-    -------
-    V : (NUM_ROMVARS*DOF,r1+r2) ndarray
-        Complete block-structure POD basis.
-    """
-    # Check shapes.
-    N = config.DOF * config.NUM_ROMVARS
-    if V1.shape[0] + V2.shape[0] != N:
-        raise RuntimeError("illegal basis size (row count off)")
-    r1, r2 = V1.shape[1], V2.shape[1]
-    n1 = config.ROM_VARIABLES.index("T") * config.DOF
-    n2 = n1 + config.DOF
-
-    # Assemble block matrix.
-    V = np.zeros((N,r1+r2))
-    V[:n1,:r1] = V1[:n1]
-    V[n1:n2,r1:] = V2
-    V[n2:,:r1] = V1[n1:]
-
-    return V
-
-
-def get_basis_size(trainsize):
-    """Get the number of saved POD basis vectors for the given `trainsize`.
-
-    Parameters
-    ----------
-    trainsize : int
-        The number of snapshots used when the SVD was computed.
-
-    Returns
-    -------
-    r1 : int
-        Number of left singular vectors that have been saved for the
-        first basis.
-
-    r2 : int
-        Number of left singular vectors that have been saved for the
-        second basis.
-    """
-    # Locate the data.
-    data_path = _checkexists(config.basis_path(trainsize))
-
-    # Extract the data.
-    with h5py.File(data_path, 'r') as hf:
-        return hf["basis1/V"].shape[1], hf["basis2/V"].shape[1]
-
-
-def load_projected_data(trainsize, r1, r2):
+def load_projected_data(trainsize, r):
     """Load snapshots that have been projected to a low-dimensional subspace.
 
     Parameters
     ----------
     trainsize : int
-        The number of snapshots to load. This is also the number of
+        Number of snapshots to load. This is also the number of
         snapshots that were used when the POD basis (SVD) was computed.
 
-    r1 : int
-        The number of retained POD modes used in the first projection.
-
-    r2 : int
-        The number of retained POD modes used in the second projection.
+    r : int
+        Number of retained POD modes used in the projection.
 
     Returns
     -------
-    Q_ : (r1+r2,trainsize) ndarray
-        The lifted, scaled, projected snapshots.
+    Q_ : (r,trainsize) ndarray
+        Lifted, scaled, projected snapshots.
 
-    Qdot_ : (r1+r2,trainsize) ndarray
+    Qdot_ : (r,trainsize) ndarray
         Velocity snapshots corresponding to Q_.
 
     time_domain : (trainsize) ndarray
-        The time domain corresponding to the lifted, scaled data.
+        Time domain corresponding to the lifted, scaled data.
     """
     # Locate the data.
     data_path = _checkexists(config.projected_data_path(trainsize))
@@ -368,13 +289,9 @@ def load_projected_data(trainsize, r1, r2):
         with h5py.File(data_path, 'r') as hf:
 
             # Check data shapes.
-            R1, R2 = hf["rs"][:]
-            if hf["data"].shape[0] != R1 + R2:
-                raise RuntimeError(f"data sets 'data' and 'rs' not aligned")
-            if R1 < r1:
-                raise ValueError(f"first basis only has {R1} modes")
-            if R2 < r2:
-                raise ValueError(f"second basis only has {R2} modes")
+            rmax = hf["data"].shape[0]
+            if rmax < r:
+                raise ValueError(f"basis only has {rmax} columns")
             if hf["data"].shape[1] != trainsize:
                 raise RuntimeError(f"data set 'data' has incorrect shape")
             if hf["ddt"].shape != hf["data"].shape:
@@ -383,30 +300,24 @@ def load_projected_data(trainsize, r1, r2):
                 raise RuntimeError(f"data set 'time' has incorrect shape")
 
             # Get the correct rows of the saved projection data.
-            Q_ = np.row_stack([hf["data"][:r1], hf["data"][R1:R1+r2]])
-            Qdot_ = np.row_stack([hf["ddt"][:r1], hf["ddt"][R1:R1+r2]])
-            return Q_, Qdot_, hf["time"][:]
+            return hf["data"][:r], hf["ddt"][:r], hf["time"][:]
 
 
-def load_rom(trainsize, r1, r2, reg):
+def load_rom(trainsize, r, reg):
     """Load a single trained ROM.
 
     Parameters
     ----------
     trainsize : int
-        The number of snapshots used to train the ROM. This is also the number
+        Number of snapshots used to train the ROM. This is also the number
         of snapshots that were used when the POD basis (SVD) was computed.
 
-    r1 : int
-        Number of retained POD modes (left singular vectors) used to project
-        the training data with the first basis.
-
-    r2 : int
-        Number of retained POD modes (left singular vectors) used to project
-        the training data with the second basis.
+    r : int
+        Dimension of the ROM. Also the number of retained POD modes (left
+        singular vectors) used to project the training data.
 
     reg : float
-        The regularization factor used in the Operator Inference least-squares
+        Regularization factor used in the Operator Inference least-squares
         problem for training the ROM.
 
     Returns
@@ -415,27 +326,21 @@ def load_rom(trainsize, r1, r2, reg):
         The trained reduced-order model.
     """
     # Locate the data.
-    data_path = _checkexists(config.rom_path(trainsize, r1, r2, reg))
+    data_path = _checkexists(config.rom_path(trainsize, r, reg))
 
     # Extract the trained ROM.
     try:
         rom = roi.load_model(data_path)
     except FileNotFoundError as e:
         raise DataNotFoundError(f"could not locate ROM with {trainsize:d} "
-                                f"training snapshots, r1={r1:d}, r2={r2:d}, "
+                                f"training snapshots, r={r:d}, "
                                 f"and reg={reg:e}") from e
-    # Check data shapes.
-    if rom.r != r1 + r2:
-        raise RuntimeError(f"rom.r = {rom.r} != {r1+r2}")
+    # Check ROM dimension.
+    if rom.r != r:
+        raise RuntimeError(f"rom.r = {rom.r} != {r}")
 
-    import combustion_rom as crom
-    romcopy = crom.CombustionROM(r1, r2, 4)
-    romcopy._set_operators(None, c_=rom.c_, A_=rom.A_,
-                           Hc_=rom.Hc_, Gc_=rom.Gc_, B_=rom.B_)
-
-    romcopy.trainsize = trainsize
-    romcopy.reg = reg
-    return romcopy
+    rom.trainsize, rom.reg = trainsize, reg
+    return rom
 
 
 def load_spatial_statistics(keys, k=None):

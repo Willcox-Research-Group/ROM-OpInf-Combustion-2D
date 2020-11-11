@@ -2,12 +2,10 @@
 """Generate training data for reduced-order model learning in three steps:
 
 1. Transform the GEMS training data to the learning variables and scale each
-variable to the intervals defined by config.SCALE_TO. Save the processed data
-(see also step2a_transform.py).
+variable appropriately. Save the processed data (see also step2a_transform.py).
 
 2. Compute the POD basis (the dominant left singular vectors) of the lifted,
-scaled snapshot training data and save the basis and the corresponding singular
-values (see also step2b_basis.py).
+scaled snapshot training data and save the basis (see also step2b_basis.py).
 
 3. Project the lifted, scaled snapshot training data to the subspace spanned by
 the columns of the POD basis V, compute velocity information for the projected
@@ -87,9 +85,9 @@ def main(trainsize, num_modes):
     # STEP 2B: Get the POD basis from the lifted, scaled data -----------------
     try:
         # Attempt to load existing SVD data.
-        if min(utils.get_basis_size(trainsize)) < num_modes:
-            raise utils.DataNotFoundError("not enough saved basis vectors")
         basis, scales = utils.load_basis(trainsize, None, None)
+        if basis.shape[1] < num_modes:
+            raise utils.DataNotFoundError("not enough saved basis vectors")
         num_modes = basis.shape[1]      # Use larger basis size if available.
 
     except utils.DataNotFoundError as e:

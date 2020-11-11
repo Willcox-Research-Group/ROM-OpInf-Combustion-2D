@@ -1,6 +1,6 @@
 # step2a_transform.py
 """Transform the GEMS data to the learning variables and scale each variable
-to the intervals defined by config.SCALE_TO. Save the processed data.
+appropriately. Save the processed data.
 
 Examples
 --------

@@ -1,7 +1,7 @@
 # step2c_project.py
-"""Project lifted, scaled snapshot training data to the subspace
-spanned by the columns of the POD basis V; compute velocity
-information for the projected snapshots; and save the projected data.
+"""Project the lifted, scaled snapshot training data to the subspace spanned by
+the columns of the POD basis V, compute velocity information for the projected
+snapshots, and save the projected data.
 
 Examples
 --------
@@ -75,14 +75,12 @@ def project_and_save_data(Q, t, V):
         Qdot_ = roi.pre.xdot_uniform(Q_, dt, order=4)
 
     # Save the projected training data.
-    r1, r2 = utils.get_basis_size(Q.shape[1])
     save_path = config.projected_data_path(Q.shape[1])
     with utils.timed_block(f"Saving projected data"):
         with h5py.File(save_path, 'w') as hf:
             hf.create_dataset("data", data=Q_)
             hf.create_dataset("ddt", data=Qdot_)
             hf.create_dataset("time", data=t)
-            hf.create_dataset("rs", data=[r1, r2])
     logging.info(f"Projected data saved to {save_path}.\n")
 
     return Q_, Qdot_
@@ -96,9 +94,10 @@ def main(trainsize):
     Parameters
     ----------
     trainsize : int
-        The number of snapshots to use in the computation. There must exist
-        a file of exactly `trainsize` lifted, scaled snapshots
-        (see step2a_lift.py).
+        The number of snapshots to use in the computation. There must
+        exist a file of exactly `trainsize` lifted, scaled snapshots
+        (see step2a_transform.py) and a basis for those snapshots
+        (see step2b_basis.py).
     """
     utils.reset_logger(trainsize)
 
