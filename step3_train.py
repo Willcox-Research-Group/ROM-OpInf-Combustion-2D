@@ -437,21 +437,21 @@ def train_multi_gridsearch(trainsize, r1, r2, regs,
         data Q, i.e., bound = margin * max(abs(Q)).
     """
     utils.reset_logger(trainsize)
-    _check_dofs(trainsize, r1 + r2, r1)
+    _check_dofs(trainsize, r1 + r2, r1 + r2 - 10)
 
     # Parse aguments.
     if len(regs) != 6:
         print(regs)
         raise ValueError("regs must be bounds for grid search")
-    λ1grid = np.logspace(np.log10(regs[0]), np.log10(regs[1]), 20)
-    λ2grid = np.logspace(np.log10(regs[2]), np.log10(regs[3]), 20)
-    λ3grid = np.logspace(np.log10(regs[4]), np.log10(regs[5]), 20)
+    λ1grid = np.logspace(np.log10(regs[0]), np.log10(regs[1]), 5)
+    λ2grid = np.logspace(np.log10(regs[2]), np.log10(regs[3]), 5)
+    λ3grid = np.logspace(np.log10(regs[4]), np.log10(regs[5]), 5)
 
     # Load the full time domain and evaluate the input function.
     t = utils.load_time_domain(testsize)
 
     rom = roi.InferredContinuousROM(config.MODELFORM)
-    logging.info(f"TRAINING {10**3} ROMS")
+    logging.info(f"TRAINING {5**3} ROMS")
 
     # Load training data.
     Q_, Qdot_, _ = utils.load_projected_data(trainsize, r1, r2)
@@ -462,7 +462,7 @@ def train_multi_gridsearch(trainsize, r1, r2, regs,
     # Create a solver mapping regularization parameters to operators.
     with utils.timed_block("Constructing data matrix / prepping solver, "
                            f"r1={r1:d}, r2={r2:d}"):
-        rom = crom.CombustionROM(r1, r2)
+        rom = crom.CombustionROM(r1, r2, min(r2, 10))
         solver = rom.construct_solver(Q_, Qdot_, config.U(t[:trainsize]))
 
     # Test each regularization parameter.
@@ -493,7 +493,9 @@ def train_multi_gridsearch(trainsize, r1, r2, regs,
 
     # Choose and save the ROM with the least error.
     if not errors_pass:
-        print(f"NO STABLE ROMS for r1={r1:d}, r2={r2:d}")
+        message = f"NO STABLE ROMS for r1={r1:d}, r2={r2:d}"
+        print(message)
+        logging.info(message)
         return
 
     err2reg = {err:reg for reg,err in errors_pass.items()}

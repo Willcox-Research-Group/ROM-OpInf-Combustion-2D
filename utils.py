@@ -428,11 +428,17 @@ def load_rom(trainsize, r1, r2, reg):
     if rom.r != r1 + r2:
         raise RuntimeError(f"rom.r = {rom.r} != {r1+r2}")
 
-    rom.trainsize = trainsize
-    rom.reg = reg
-    rom.r1 = r1
-    rom.r2 = r2
-    return rom
+    import combustion_rom as crom
+    romcopy = crom.CombustionROM(r1, r2, 10)
+    romcopy._set_operators(None, c_=rom.c_, A_=rom.A_,
+                           Hc_=rom.Hc_, Gc_=rom.Gc_, B_=rom.B_)
+
+    romcopy.trainsize = trainsize
+    romcopy.reg = reg
+    romcopy.r1 = r1
+    romcopy.r2 = r2
+    romcopy.v = 10
+    return romcopy
 
 
 def load_spatial_statistics(keys, k=None):
