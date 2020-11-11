@@ -85,7 +85,7 @@ def main(trainsize, num_modes):
     # STEP 2B: Get the POD basis from the lifted, scaled data -----------------
     try:
         # Attempt to load existing SVD data.
-        basis, scales = utils.load_basis(trainsize, None, None)
+        basis, scales = utils.load_basis(trainsize, None)
         if basis.shape[1] < num_modes:
             raise utils.DataNotFoundError("not enough saved basis vectors")
         num_modes = basis.shape[1]      # Use larger basis size if available.

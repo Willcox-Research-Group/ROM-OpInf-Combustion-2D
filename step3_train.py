@@ -237,7 +237,6 @@ def train_with_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
                                        config.U(t[:trainsize]), 1)
 
     # Test each regularization parameter.
-    trained_roms = {}
     errors_pass = {}
     errors_fail = {}
     for reg in regs:
@@ -245,7 +244,6 @@ def train_with_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
         # Train the ROM on all training snapshots.
         with utils.timed_block(f"Testing ROM with r={r:d}, reg={reg:e}"):
             rom._evaluate_solver(solver, reg)
-            trained_roms[reg] = rom
 
             # Simulate the ROM over the full domain.
             with np.warnings.catch_warnings():
@@ -271,7 +269,8 @@ def train_with_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     best_reg = err2reg[min(err2reg.keys())]
     with utils.timed_block("Best regularization for"
                            f"r={r:d}: {best_reg:.0f}"):
-        save_trained_rom(trainsize, r, best_reg, trained_roms[best_reg])
+        rom._evaluate_solver(solver, best_reg)
+        save_trained_rom(trainsize, r, best_reg, rom)
 
     plt.semilogx(list(errors_pass.keys()), list(errors_pass.values()),
                  f"C0*", mew=0, label=fr"$r = {r:d}$, bound satisfied")
@@ -361,9 +360,9 @@ def train_with_minimization(trainsize, r, regs, testsize=None, margin=1.5):
                                      bounds=bounds, method="bounded")
     if opt_result.success and opt_result.fun != _MAXFUN:
         best_reg = 10 ** opt_result.x
-        with utils.timed_block("Best regularization for"
-                               f"r={r:d}: {reg:.0f}"):
-            rom._evaluate_solver(best_reg)
+        with utils.timed_block("Best regularization for "
+                               f"r={r:d}: {best_reg:.0f}"):
+            rom._evaluate_solver(solver, best_reg)
             save_trained_rom(trainsize, r, best_reg, rom)
     else:
         message = "Regularization search optimization FAILED"
@@ -402,14 +401,14 @@ def train_multi_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     """
     utils.reset_logger(trainsize)
     d = _check_dofs(trainsize, r)
-    s = slice(1 + r, 1 + r + r*(r+1)//2)
+    s = slice(1+r, -1)
 
     # Parse aguments.
     if len(regs) != 4:
         print(regs)
         raise ValueError("regs must be bounds for grid search")
-    λ1grid = np.logspace(np.log10(regs[0]), np.log10(regs[1]), 2)
-    λ2grid = np.logspace(np.log10(regs[2]), np.log10(regs[3]), 2)
+    λ1grid = np.logspace(np.log10(regs[0]), np.log10(regs[1]), 10)
+    λ2grid = np.logspace(np.log10(regs[2]), np.log10(regs[3]), 10)
 
     # Load the full time domain and evaluate the input function.
     t = utils.load_time_domain(testsize)
@@ -432,7 +431,6 @@ def train_multi_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
                                        config.U(t[:trainsize]), P)
 
     # Test each regularization parameter.
-    trained_roms = {}
     errors_pass = {}
     errors_fail = {}
     for λ1,λ2 in itertools.product(λ1grid, λ2grid):
@@ -441,8 +439,7 @@ def train_multi_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
                                f"r={r:d}, λ1={λ1:5e}, λ2={λ2:5e}"):
             P = np.full(d, λ1)
             P[s] = λ2
-            rom._evaluate_solver(solver, P)
-            trained_roms[(λ1,λ2)] = rom
+            rom._evaluate_solver(solver, np.diag(P))
 
             # Simulate the ROM over the full domain.
             with np.warnings.catch_warnings():
@@ -456,6 +453,7 @@ def train_multi_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
             if q_rom.shape[1] > trainsize:
                 errors[(λ1,λ2)] = roi.post.Lp_error(Q_, q_rom[:,:trainsize],
                                                             t[:trainsize])[1]
+                # print(f"relerror = {errors[(λ1,λ2)]:.4f}")
 
     # Choose and save the ROM with the least error.
     if not errors_pass:
@@ -467,8 +465,11 @@ def train_multi_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     err2reg = {err:reg for reg,err in errors_pass.items()}
     λ1,λ2 = err2reg[min(err2reg.keys())]
     with utils.timed_block(f"Best regularization for r={r:d}: "
-                           f"λ1={λ1:5e}, λ2={λ2:5e}"):
-        save_trained_rom(trainsize, r, λ1, trained_roms[(λ1,λ2)])
+                           f"λ1={λ1:.0f}, λ2={λ2:.0f}"):
+        P = np.full(d, λ1)
+        P[s] = λ2
+        rom._evaluate_solver(solver, np.diag(P))
+        save_trained_rom(trainsize, r, λ1, rom)
         # SAVE KEY IS THE FIRST PARAMETER!!!!
 
 
@@ -537,13 +538,13 @@ if __name__ == "__main__":
 
     # Do one of the main routines.
     if args.save_all:
-        train_and_save_all(args.trainsize, args.r, regs)
+        train_and_save_all(args.trainsize, args.modes, regs)
     elif args.gridsearch:
-        train_with_gridsearch(args.trainsize, args.r, regs,
+        train_with_gridsearch(args.trainsize, args.modes, regs,
                               args.testsize, args.margin)
     elif args.minimize:
-        train_with_minimization(args.trainsize, args.r, regs,
+        train_with_minimization(args.trainsize, args.modes, regs,
                                 args.testsize, args.margin)
     elif args.multi:
-        train_multi_gridsearch(args.trainsize, args.r,
+        train_multi_gridsearch(args.trainsize, args.modes,
                                args.regularization, args.testsize, args.margin)

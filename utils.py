@@ -251,7 +251,7 @@ def load_basis(trainsize, r):
         with h5py.File(data_path, 'r') as hf:
             # Check data shapes.
             rmax = hf["basis"].shape[1]
-            if r is not None and rmax < num_rmodes:
+            if r is not None and rmax < r:
                 raise ValueError(f"basis only has {rmax} columns")
 
             # Load the data.

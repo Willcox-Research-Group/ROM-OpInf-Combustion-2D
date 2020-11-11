@@ -43,7 +43,7 @@ def TRNFMT(k):
     """String format for trianing sizes."""
     return f"{TRN_PREFIX}{k:05d}"
 
-def DIMFMT(rs):
+def DIMFMT(r):
     """String format for ROM dimensions."""
     return f"{DIM_PREFIX}{r:03d}"
 
