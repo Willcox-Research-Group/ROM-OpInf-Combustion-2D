@@ -402,7 +402,7 @@ def train_with_minimization(trainsize, r1, r2, regs,
 
 
 def train_multi_gridsearch(trainsize, r1, r2, regs,
-                           testsize=None, margin=1.5):
+                           testsize=None, margin=1.5, v=4):
     """Train ROMs with the given dimension(s) and regularization(s),
     saving only the ROM with the least training error that satisfies
     a bound on the integrated POD coefficients.
@@ -437,15 +437,15 @@ def train_multi_gridsearch(trainsize, r1, r2, regs,
         data Q, i.e., bound = margin * max(abs(Q)).
     """
     utils.reset_logger(trainsize)
-    _check_dofs(trainsize, r1 + r2, r1 + r2 - 10)
+    _check_dofs(trainsize, r1 + r2, r1 + r2 - 2)
 
     # Parse aguments.
     if len(regs) != 6:
         print(regs)
         raise ValueError("regs must be bounds for grid search")
-    λ1grid = np.logspace(np.log10(regs[0]), np.log10(regs[1]), 5)
-    λ2grid = np.logspace(np.log10(regs[2]), np.log10(regs[3]), 5)
-    λ3grid = np.logspace(np.log10(regs[4]), np.log10(regs[5]), 5)
+    λ1grid = np.logspace(np.log10(regs[0]), np.log10(regs[1]), 2)
+    λ2grid = np.logspace(np.log10(regs[2]), np.log10(regs[3]), 2)
+    λ3grid = np.logspace(np.log10(regs[4]), np.log10(regs[5]), 2)
 
     # Load the full time domain and evaluate the input function.
     t = utils.load_time_domain(testsize)
@@ -462,7 +462,7 @@ def train_multi_gridsearch(trainsize, r1, r2, regs,
     # Create a solver mapping regularization parameters to operators.
     with utils.timed_block("Constructing data matrix / prepping solver, "
                            f"r1={r1:d}, r2={r2:d}"):
-        rom = crom.CombustionROM(r1, r2, min(r2, 10))
+        rom = crom.CombustionROM(r1, r2, min(r2, v))
         solver = rom.construct_solver(Q_, Qdot_, config.U(t[:trainsize]))
 
     # Test each regularization parameter.

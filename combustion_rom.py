@@ -13,14 +13,14 @@ kron3c = roi.utils.kron3c
 
 # Utilities ===================================================================
 
-class MultiLstsqSolver(roi.lstsq._tikhonov._BaseLstsqSolver):
+class MultiLstsqSolver(roi.lstsq._tikhonov._BaseSolver):
     """Encapsulate multiple least-squares solvers."""
     def fit(self, As, Bs, SolverClass):
         """Initialize and fit a solver for each pair of inputs."""
         # Check inputs.
         if len(As) != len(Bs):
             raise ValueError("inputs not aligned")
-        if not issubclass(SolverClass, roi.lstsq._tikhonov._BaseLstsqSolver):
+        if not issubclass(SolverClass, roi.lstsq._tikhonov._BaseSolver):
             raise TypeError("invalid SolverClass")
 
         # Fit each solver.
@@ -150,7 +150,7 @@ class CombustionROM(roi.InferredContinuousROM):
         D1, D2 = self._assemble_data_matrices(X_, U)
         Rs = np.split(rhs_.T, [self.r1, self.r1+self.v], axis=1)
         return MultiLstsqSolver().fit([D1, D2, D1], Rs,
-                                      roi.lstsq.LstsqSolverTikhonov)
+                                      roi.lstsq.SolverTikhonov)
 
     def evaluate_solver(self, solver, λ1, λ2, λ3):
         """Evaluate the least-squares solver at the given regularization
