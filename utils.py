@@ -246,6 +246,12 @@ def load_basis(trainsize, r):
     # Locate the data.
     data_path = _checkexists(config.basis_path(trainsize))
 
+    # Secret! Return list of full singular values.
+    if r == -1:
+        data_path = data_path.replace(config.BASIS_FILE, "svdvals.h5")
+        with h5py.File(data_path, 'r') as hf:
+            return hf["svdvals"][:]
+
     # Extract the data.
     with timed_block(f"Loading POD basis from {data_path}"):
         with h5py.File(data_path, 'r') as hf:

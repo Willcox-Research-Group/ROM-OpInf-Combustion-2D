@@ -132,7 +132,7 @@ def multireg(r, d, λ1, λ2):
     return P
 
 
-def is_bounded(q_rom, B, message="bound violated"):
+def is_bounded(q_rom, B, message="bound exceeded"):
     """Return True if the absolute integrated POD coefficients lie within the
     given bound.
 
