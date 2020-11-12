@@ -103,7 +103,36 @@ def _check_dofs(trainsize, r):
     return d
 
 
-def is_bounded(q_rom, B, message="ROM violates bound"):
+def multireg(r, d, λ1, λ2):
+    """Return the regularizer that penalizes all operator elements by λ1,
+    except for the quadratic operator elements, which are penalized by λ2.
+
+    Parameters
+    ----------
+    r : int
+        Dimension of the ROM.
+
+    d : int
+        Number of unknowns in the least-squares problems, i.e., the number
+        of elements in a single row of the operator matrix O.
+
+    λ1 : float
+        Regularization parameter for the non-quadratic operators.
+
+    λ2 : float
+        Regularization parameter for the quadratic operator.
+
+    Returns
+    -------
+    P : (d,) ndarray
+        Diagonal entries of the dxd regularizer.
+    """
+    P = np.full(d, λ1)
+    P[1+r:-1] = λ2
+    return P
+
+
+def is_bounded(q_rom, B, message="bound violated"):
     """Return True if the absolute integrated POD coefficients lie within the
     given bound.
 
@@ -165,7 +194,7 @@ def train_and_save_all(trainsize, r, regs):
     utils.reset_logger(trainsize)
     _check_dofs(trainsize, r)
 
-    logging.info(f"TRAINING {len(regs)} ROMS")
+    print(f"TRAINING {len(regs)} ROMS")
 
     # Load training data.
     Q_, Qdot_, time_domain = utils.load_projected_data(trainsize, r)
@@ -176,7 +205,8 @@ def train_and_save_all(trainsize, r, regs):
     # Create a solver mapping regularization parameters to operators.
     with utils.timed_block(f"Constructing/factoring data matrix, r={r:d}"):
         rom = roi.InferredContinuousROM(config.MODELFORM)
-        solver = rom._construct_solver(None, Q_, Qdot_, U, 1)
+        solver = rom._construct_solver(None, Q_, Qdot_, U, 1,
+                                       compute_extras=False)
 
     # Train and save each ROM.
     for reg in regs:
@@ -222,7 +252,7 @@ def train_with_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     t = utils.load_time_domain(testsize)
 
     rom = roi.InferredContinuousROM(config.MODELFORM)
-    logging.info(f"TRAINING {len(regs)} ROMS")
+    print(f"TRAINING {len(regs)} ROMS")
 
     # Load training data.
     Q_, Qdot_, _ = utils.load_projected_data(trainsize, r)
@@ -234,7 +264,8 @@ def train_with_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     with utils.timed_block(f"Constructing/factoring data matrix, r={r:d}"):
         rom = roi.InferredContinuousROM(config.MODELFORM)
         solver = rom._construct_solver(None, Q_, Qdot_,
-                                       config.U(t[:trainsize]), 1)
+                                       config.U(t[:trainsize]), 1,
+                                       compute_extras=False)
 
     # Test each regularization parameter.
     errors_pass = {}
@@ -334,7 +365,8 @@ def train_with_minimization(trainsize, r, regs, testsize=None, margin=1.5):
     # Create a solver mapping regularization parameters to operators.
     with utils.timed_block(f"Constructing/factoring data matrix, r={r:d}"):
         rom = roi.InferredContinuousROM(config.MODELFORM)
-        solver = rom._construct_solver(None, Q_, Qdot_, U[:trainsize], 1)
+        solver = rom._construct_solver(None, Q_, Qdot_, U[:trainsize], 1,
+                                       compute_extras=False)
 
     # Test each regularization parameter.
     def training_error_from_rom(log10reg):
@@ -369,6 +401,8 @@ def train_with_minimization(trainsize, r, regs, testsize=None, margin=1.5):
         print(message)
         logging.info(message)
 
+
+# MULTIPLE REGULARIZATIONS ====================================================
 
 def train_multi_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     """Train ROMs with the given dimension(s) and regularization(s),
@@ -414,7 +448,7 @@ def train_multi_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     t = utils.load_time_domain(testsize)
 
     rom = roi.InferredContinuousROM(config.MODELFORM)
-    logging.info(f"TRAINING {5**3} ROMS")
+    print(f"TRAINING {λ1grid.size*λ2grid.size} ROMS")
 
     # Load training data.
     Q_, Qdot_, _ = utils.load_projected_data(trainsize, r)
@@ -426,9 +460,10 @@ def train_multi_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     with utils.timed_block("Constructing data matrix / prepping solver, "
                            f"r={r:d}"):
         rom = roi.InferredContinuousROM(config.MODELFORM)
-        P = np.ones(roi.lstsq.lstsq_size(config.MODELFORM, r, m=1))
         solver = rom._construct_solver(None, Q_, Qdot_,
-                                       config.U(t[:trainsize]), P)
+                                       config.U(t[:trainsize]), np.ones(d),
+                                       compute_extras=False,
+                                       check_regularizer=False)
 
     # Test each regularization parameter.
     errors_pass = {}
@@ -437,9 +472,7 @@ def train_multi_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
         # Train the ROM on all training snapshots.
         with utils.timed_block("Testing ROM with "
                                f"r={r:d}, λ1={λ1:5e}, λ2={λ2:5e}"):
-            P = np.full(d, λ1)
-            P[s] = λ2
-            rom._evaluate_solver(solver, np.diag(P))
+            rom._evaluate_solver(solver, multireg(r, d, λ1, λ2))
 
             # Simulate the ROM over the full domain.
             with np.warnings.catch_warnings():
@@ -466,11 +499,98 @@ def train_multi_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     λ1,λ2 = err2reg[min(err2reg.keys())]
     with utils.timed_block(f"Best regularization for r={r:d}: "
                            f"λ1={λ1:.0f}, λ2={λ2:.0f}"):
-        P = np.full(d, λ1)
-        P[s] = λ2
-        rom._evaluate_solver(solver, np.diag(P))
+        rom._evaluate_solver(solver, multireg(r, d, λ1, λ2))
         save_trained_rom(trainsize, r, λ1, rom)
         # SAVE KEY IS THE FIRST PARAMETER!!!!
+
+
+def train_with_multiopt(trainsize, r, regs0, testsize=None, margin=1.5):
+    """Train ROMs with the given dimension(s), saving only the ROM with
+    the least training error that satisfies a bound on the integrated POD
+    coefficients, using a search algorithm to choose the regularization
+    parameter.
+
+    Parameters
+    ----------
+    trainsize : int
+        Number of snapshots to use to train the ROM(s).
+
+    r : int
+        Dimension of the ROM. Also the number of retained POD modes (left
+        singular vectors) used to project the training data.
+
+    regs0 : [float, float]
+        Initial guesses for the regularization parameters to use in the
+        training (non-quadratic, quadratic).
+
+    testsize : int
+        Number of time steps for which a valid ROM must satisfy the POD bound.
+
+    margin : float >= 1
+        Amount that the integrated POD coefficients of a valid ROM are allowed
+        to deviate in magnitude from the maximum magnitude of the training
+        data Q, i.e., bound = margin * max(abs(Q)).
+    """
+    utils.reset_logger(trainsize)
+    d = _check_dofs(trainsize, r)
+
+    # Parse aguments.
+    if np.isscalar(regs0) or len(regs0) != 2:
+        raise ValueError("2 regularizations required (linear, quadratic)")
+
+    # Load the full time domain and evaluate the input function.
+    t = utils.load_time_domain(testsize)
+    U = config.U(t)
+
+    # Load training data.
+    Q_, Qdot_, _ = utils.load_projected_data(trainsize, r)
+
+    # Compute the bound to require for integrated POD modes.
+    B = margin * np.abs(Q_).max()
+
+    # Create a solver mapping regularization parameters to operators.
+    with utils.timed_block(f"Constructing least-squares solver, r={r:d}"):
+        rom = roi.InferredContinuousROM(config.MODELFORM)
+        solver = rom._construct_solver(None, Q_, Qdot_, U[:trainsize],
+                                       multireg(r, d, regs0[0], regs0[1]),
+                                       compute_extras=False,
+                                       check_regularizer=False)
+
+    # Test each regularization parameter.
+    def training_error_from_rom(log10regs):
+        λ1, λ2 = 10**log10regs
+
+        # Train the ROM on all training snapshots.
+        with utils.timed_block("Testing ROM with "
+                               f"r={r:d}, λ1={λ1:e}, λ2={λ2:e}"):
+            rom._evaluate_solver(solver, multireg(r, d, λ1, λ2))
+
+            # Simulate the ROM over the full domain.
+            with np.warnings.catch_warnings():
+                np.warnings.simplefilter("ignore")
+                q_rom = rom.predict(Q_[:,0], t, config.U, method="RK45")
+
+            # Check for boundedness of solution.
+            if not is_bounded(q_rom, B):
+                return _MAXFUN
+
+            # Calculate integrated relative errors in the reduced space.
+            return roi.post.Lp_error(Q_, q_rom[:,:trainsize], t[:trainsize])[1]
+
+    opt_result = opt.minimize(training_error_from_rom, np.log10(regs0),
+                              method="Nelder-Mead")
+    if opt_result.success and opt_result.fun != _MAXFUN:
+        λ1, λ2 = 10 ** opt_result.x
+        with utils.timed_block("Best regularization for "
+                               f"r={r:d}: λ1={λ1:.0f}, λ2={λ2:.0f}"):
+            rom._evaluate_solver(solver, multireg(r, d, λ1, λ2))
+            save_trained_rom(trainsize, r, λ1, rom)
+    else:
+        message = "Regularization search optimization FAILED"
+        print(message)
+        logging.info(message)
+
+
 
 
 # =============================================================================
@@ -506,7 +626,10 @@ if __name__ == "__main__":
                             "interval via minimize scalar minimization")
     group.add_argument("--multi", action="store_true",
                        help="grid search with multiple regularization "
-                            "parameters (linear, quadratic, cubic)")
+                            "parameters (linear, quadratic)")
+    group.add_argument("--multiopt", action="store_true",
+                       help="Nelder-Mead optimization with multiple "
+                            "regularization parameters (linear, quadratic)")
 
     # Main positional arguments.
     parser.add_argument("-r", "--modes", type=int, required=True,
@@ -548,3 +671,6 @@ if __name__ == "__main__":
     elif args.multi:
         train_multi_gridsearch(args.trainsize, args.modes,
                                args.regularization, args.testsize, args.margin)
+    elif args.multiopt:
+        train_with_multiopt(args.trainsize, args.modes, regs,
+                            args.testsize, args.margin)
