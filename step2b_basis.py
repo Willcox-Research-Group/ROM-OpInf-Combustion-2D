@@ -24,6 +24,7 @@ Command Line Arguments
 import h5py
 import logging
 import numpy as np
+import scipy.linalg as la
 
 import rom_operator_inference as roi
 
@@ -69,6 +70,36 @@ def compute_and_save_pod_basis(num_modes, training_data, scales):
     return V
 
 
+def compute_and_save_all_svdvals(training_data):
+    """Compute and save the singular values corresponding to the *full* POD
+    basis for the training data.
+
+    Parameters
+    ----------
+    training_data : (NUM_ROMVARS*DOF,trainsize) ndarray
+        Training snapshots to take the SVD of.
+
+    Returns
+    -------
+    svdvals : (trainsize,) ndarray
+        Singular values for the full POD basis.
+    """
+    # Compute the DENSE SVD of the training data to get the singular values.
+    with utils.timed_block("Computing *dense* SVD for singular values"):
+        svdvals = la.svdvals(training_data,
+                             overwrite_a=True, check_finite=False)
+
+    # Save the POD basis.
+    save_path = config.basis_path(training_data.shape[1])
+    save_path = save_path.replace(config.BASIS_FILE, "svdvals.h5")
+    with utils.timed_block(f"Saving singular values"):
+        with h5py.File(save_path, 'w') as hf:
+            hf.create_dataset("svdvals", data=svdvals)
+    logging.info(f"Singular values saved to {save_path}.\n")
+
+    return svdvals
+
+
 def main(trainsize, num_modes):
     """Compute the POD basis (dominant left singular values) of a set of
     lifted, scaled snapshot training data and save the basis and the
@@ -92,7 +123,11 @@ def main(trainsize, num_modes):
     training_data, _, scales = utils.load_scaled_data(trainsize)
 
     # Compute and save the (randomized) SVD from the training data.
-    compute_and_save_pod_basis(num_modes, training_data, scales)
+    if num_modes == -1:
+        # Secret mode! Compute all singular values (EXPENSIVE).
+        compute_and_save_all_svdvals(training_data)
+    else:
+        compute_and_save_pod_basis(num_modes, training_data, scales)
 
 
 # =============================================================================
