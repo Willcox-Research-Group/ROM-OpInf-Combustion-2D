@@ -5,13 +5,13 @@ given by config.figures_path().
 Examples
 --------
 # Plot time traces of each variable at the monitor locations for the ROM
-# trained from 10,000 snapshots with 22 POD modes and a regularization
-# parameter 4e4.
-$ python3 step4_plot.py 10000 --time-traces --modes 22 --regularization 4e4
+# trained from 10,000 snapshots with 46 POD modes and regularization parameters
+# λ1 = 300, λ2 = 21000.
+$ python3 step4_plot.py --point-traces 10000 46 300 21000
 
-# Plot spatial averages and species integrals for the ROM trained from
-# 20,000 snapshots with 44 POD modes and a regularization parameter 5e4.
-$ python3 step4_plot.py 20000 --spatial-statistics --modes 44 --regularization 5e4
+# Plot spatial averages and species integrals for the ROM trained from 20,000
+# snapshots with 92 POD modes and regularization parameters λ1 = 9e3, λ2 = 1e4.
+$ python3 step4_plot.py --spatial-statistics 20000 92 9e3 1e4
 
 Loading Results
 ---------------
@@ -36,7 +36,7 @@ import data_processing as dproc
 
 # Helper functions ============================================================
 
-def simulate_rom(trainsize, r, reg, steps=None):
+def simulate_rom(trainsize, r, regs, steps=None):
     """Load everything needed to simulate a given ROM, simulate the ROM,
     and return the simulation results and everything needed to reconstruct
     the results in the original high-dimensional space.
@@ -50,8 +50,8 @@ def simulate_rom(trainsize, r, reg, steps=None):
     r : int
         Dimension of the ROM.
 
-    reg : float
-        Regularization parameter used to train the ROM.
+    regs : two positive floats
+        Regularization parameters used to train the ROM.
 
     steps : int or None
         Number of time steps to simulate the ROM.
@@ -75,11 +75,12 @@ def simulate_rom(trainsize, r, reg, steps=None):
     t = utils.load_time_domain(steps)
     V, scales = utils.load_basis(trainsize, r)
     Q_, _, _ = utils.load_projected_data(trainsize, r)
-    rom = utils.load_rom(trainsize, r, reg)
+    rom = utils.load_rom(trainsize, r, regs)
+    λ1, λ2 = regs
 
     # Simulate the ROM over the full time domain.
-    with utils.timed_block(f"Simulating ROM with r={r:d}, "
-                           f"reg={reg:e} over full time domain"):
+    with utils.timed_block(f"Simulating ROM with k={trainsize:d}, r={r:d}, "
+                           f"λ1={λ1:.0f}, λ2={λ2:.0f} over full time domain"):
         q_rom = rom.predict(Q_[:,0], t, config.U, method="RK45")
 
     return t, V, scales, q_rom
@@ -183,7 +184,7 @@ def veccorrcoef(X, Y):
 
 # Plot routines ===============================================================
 
-def time_traces(trainsize, r, reg, elems):
+def point_traces(trainsize, r, regs, elems, cutoff=60000):
     """Plot the time trace of each variable in the original data at the monitor
     location, and the time trace of each variable of the ROM reconstruction at
     the same locations. One figure is generated per variable.
@@ -196,8 +197,8 @@ def time_traces(trainsize, r, reg, elems):
     r : int
         Dimension of the ROM.
 
-    reg : float
-        Regularization parameter used to train the ROM.
+    regs : two positive floats
+        Regularization parameters used to train the ROM.
 
     elems : list(int) or ndarray(int)
         Indices in the spatial domain at which to compute the time traces.
@@ -212,10 +213,10 @@ def time_traces(trainsize, r, reg, elems):
     # Load and lift the true results.
     data, _ = utils.load_gems_data(rows=elems[:nelems*config.NUM_GEMSVARS])
     with utils.timed_block("Lifting GEMS time trace data"):
-        traces_gems = dproc.lift(data[:,:60000])
+        traces_gems = dproc.lift(data[:,:cutoff])
 
     # Load and simulate the ROM.
-    t, V, scales, q_rom = simulate_rom(trainsize, r, reg, 60000)
+    t, V, scales, q_rom = simulate_rom(trainsize, r, regs, cutoff)
 
     # Reconstruct and rescale the simulation results.
     simend = q_rom.shape[1]
@@ -254,10 +255,10 @@ def time_traces(trainsize, r, reg, elems):
         utils.save_figure("pointtrace"
                           f"_{config.TRNFMT(trainsize)}"
                           f"_{config.DIMFMT(r)}"
-                          f"_{config.REGFMT(reg)}_{var}.pdf")
+                          f"_{config.REGFMT(regs)}_{var}.pdf")
 
 
-def errors_in_time(trainsize, r, reg):
+def errors_in_time(trainsize, r, regs, cutoff=60000):
     """Plot spatially averaged errors, and the projection error, in time.
 
     Parameters
@@ -268,16 +269,16 @@ def errors_in_time(trainsize, r, reg):
     r : int
         Dimension of the ROM.
 
-    reg : float
-        Regularization parameter used to train the ROM.
+    regs : two positive floats
+        Regularization parameters used to train the ROM.
     """
     # Load and simulate the ROM.
-    t, V, scales, q_rom = simulate_rom(trainsize, r, reg, 60000)
+    t, V, scales, q_rom = simulate_rom(trainsize, r, regs, cutoff)
 
     # Load and lift the true results.
-    data, _ = utils.load_gems_data(cols=60000)
+    data, _ = utils.load_gems_data(cols=cutoff)
     with utils.timed_block("Lifting GEMS data"):
-        data_gems = dproc.lift(data[:,:60000])
+        data_gems = dproc.lift(data[:,:cutoff])
     del data
 
     # Shift and project the data (unscaling done later by chunk).
@@ -330,11 +331,11 @@ def errors_in_time(trainsize, r, reg):
     utils.save_figure(f"errors"
                       f"_{config.TRNFMT(trainsize)}"
                       f"_{config.DIMFMT(r)}"
-                      f"_{config.REGFMT(reg)}.pdf")
+                      f"_{config.REGFMT(regs)}.pdf")
     return
 
 
-def corrcoef(trainsize, r, reg):
+def corrcoef(trainsize, r, regs, cutoff=60000):
     """Plot correlation coefficients in time between GEMS and ROM solutions.
 
     Parameters
@@ -345,16 +346,16 @@ def corrcoef(trainsize, r, reg):
     r : int
         Dimension of the ROM.
 
-    reg : float
+    regs : float
         Regularization parameter used to train the ROM.
     """
     # Load and simulate the ROM.
-    t, V, scales, q_rom = simulate_rom(trainsize, r, reg, 60000)
+    t, V, scales, q_rom = simulate_rom(trainsize, r, regs, cutoff)
 
     # Load and lift the true results.
-    data, _ = utils.load_gems_data(cols=60000)
+    data, _ = utils.load_gems_data(cols=cutoff)
     with utils.timed_block("Lifting GEMS data"):
-        data_gems = dproc.lift(data[:,:60000])
+        data_gems = dproc.lift(data[:,:cutoff])
 
     # Initialize the figure.
     fig, axes = plt.subplots(3, 3, figsize=(12,6), sharex=True, sharey=True)
@@ -388,7 +389,7 @@ def corrcoef(trainsize, r, reg):
     utils.save_figure(f"corrcoef"
                       f"_{config.TRNFMT(trainsize)}"
                       f"_{config.DIMFMT(r)}"
-                      f"_{config.REGFMT(reg)}.pdf")
+                      f"_{config.REGFMT(regs)}.pdf")
 
 
 def save_statistical_features():
@@ -436,7 +437,7 @@ def save_statistical_features():
     logging.info(f"Statistical features saved to {data_path}")
 
 
-def spatial_statistics(trainsize, r, reg):
+def spatial_statistics(trainsize, r, regs):
     """Plot spatially averaged temperature and spacially itegrated (summed)
     species concentrations over the full time domain.
 
@@ -448,8 +449,8 @@ def spatial_statistics(trainsize, r, reg):
     r : int
         Dimension of the ROM.
 
-    reg : float
-        Regularization parameter used to train the ROM.
+    regs : two positive floats
+        Regularization parameters used to train the ROM.
     """
     # Load the true results.
     keys = [f"{var}_mean" for var in config.ROM_VARIABLES[:4]]
@@ -458,7 +459,7 @@ def spatial_statistics(trainsize, r, reg):
     keys = np.reshape(keys, (4,2), order='F')
 
     # Load and simulate the ROM.
-    t, V, scales, q_rom = simulate_rom(trainsize, r, reg)
+    t, V, scales, q_rom = simulate_rom(trainsize, r, regs)
 
     # Initialize the figure.
     fig, axes = plt.subplots(keys.shape[0], keys.shape[1],
@@ -493,12 +494,12 @@ def spatial_statistics(trainsize, r, reg):
     utils.save_figure(f"statfeatures"
                       f"_{config.TRNFMT(trainsize)}"
                       f"_{config.DIMFMT(r)}"
-                      f"_{config.REGFMT(reg)}.pdf")
+                      f"_{config.REGFMT(regs)}.pdf")
 
 # =============================================================================
 
-def main(trainsize, r, reg, elems,
-         plotTimeTrace=False, plotStatisticalFeatures=False,
+def main(trainsize, r, regs, elems,
+         plotPointTrace=False, plotSpatialStatistics=False,
          plotErrors=False, plotCorrelation=False):
     """Make the indicated visualization.
 
@@ -510,8 +511,8 @@ def main(trainsize, r, reg, elems,
     r : int
         Dimension of the ROM.
 
-    reg : float
-        The regularization parameters used to train each ROM.
+    regs : two positive floats
+        Regularization parameters used to train the ROM.
 
     elems : list(int) or ndarray(int)
         Indices in the spatial domain at which to compute time traces.
@@ -519,25 +520,25 @@ def main(trainsize, r, reg, elems,
     utils.reset_logger(trainsize)
 
     # Time traces (single ROM, several monitoring locations).
-    if plotTimeTrace:
+    if plotPointTrace:
         logging.info("POINT TRACES")
-        time_traces(trainsize, r, reg, elems)
+        point_traces(trainsize, r, regs, elems)
 
     # Statistical features (single ROM, several features).
-    if plotStatisticalFeatures:
-        logging.info("STATISTICAL FEATURES")
+    if plotSpatialStatistics:
+        logging.info("SPATIAL STATISTICS")
         # Compute GEMS features if needed (only done once).
         if not os.path.isfile(config.statistical_features_path()):
             save_statistical_features()
-        spatial_statistics(trainsize, r, reg)
+        spatial_statistics(trainsize, r, regs)
 
     if plotErrors:
         logging.info("ERRORS IN TIME")
-        errors_in_time(trainsize, r, reg)
+        errors_in_time(trainsize, r, regs)
 
     if plotCorrelation:
         logging.info("CORRELATIONS IN TIME")
-        corrcoef(trainsize, r, reg)
+        corrcoef(trainsize, r, regs)
 
 
 def projection_errors(trainsize, rs):
@@ -628,44 +629,42 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__,
                         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} --help
-        python3 {__file__} TRAINSIZE --time-traces
-                                  --modes R --regularization REG
-                                  --location M [...]
-        python3 {__file__} TRAINSIZE --statistical-features
-                                  --modes R --regularization REG"""
+        python3 {__file__} --point-traces TRAINSIZE R REG --location M [...]
+        python3 {__file__} --statistical-features TRAINSIZE R REG"""
+
     # Positional arguments
     parser.add_argument("trainsize", type=int,
                         help="number of snapshots in the training data")
+    parser.add_argument("modes", type=int,
+                        help="number of POD modes used to project the data")
+    parser.add_argument("regularization", type=float, nargs=2,
+                        help="regularization parameter used in ROM training")
 
     # Routine indicators
-    parser.add_argument("-tt", "--time-traces", action="store_true",
-                       help="plot time traces for the given "
-                            "basis sizes and regularization parameters "
-                            "at the specified monitoring locations")
-    parser.add_argument("-sf", "--spatial-statistics", action="store_true",
+    parser.add_argument("-pt", "--point-traces", action="store_true",
+                        help="plot time traces for the given "
+                             "basis sizes and regularization parameters "
+                             "at the specified monitoring locations")
+    parser.add_argument("-ss", "--spatial-statistics", action="store_true",
                         help="plot spatial averages and species integrals "
                              "for the ROM with the given basis size and "
                              "regularization parameters")
     parser.add_argument("--errors", action="store_true",
-                       help="plot normalized absolute errors, averaged over "
-                            "the spatial domain, as a function of time")
+                        help="plot normalized absolute errors, averaged over "
+                              "the spatial domain, as a function of time")
     parser.add_argument("--correlation", action="store_true",
-                       help="plot correlation coefficients in time for each "
-                            "variable")
+                        help="plot correlation coefficients in time for each "
+                             "variable")
 
     # Other keyword arguments
-    parser.add_argument("-r", "--modes", type=int, required=True,
-                        help="number of POD modes used to project the data")
-    parser.add_argument("-reg", "--regularization", type=float, required=True,
-                        help="regularization parameter used in ROM training")
     parser.add_argument("-loc", "--location", type=int, nargs='+',
                         default=config.MONITOR_LOCATIONS,
                         help="monitor locations for time trace plots")
 
-    # Do the main routine.
+    # Parse the arguments and do the main routine.
     args = parser.parse_args()
     main(trainsize=args.trainsize,
-         r=args.modes, reg=args.regularization,
-         plotTimeTrace=args.time_traces, elems=args.location,
-         plotStatisticalFeatures=args.spatial_statistics,
+         r=args.modes, regs=args.regularization,
+         plotPointTrace=args.point_traces, elems=args.location,
+         plotSpatialStatistics=args.spatial_statistics,
          plotErrors=args.errors, plotCorrelation=args.correlation)

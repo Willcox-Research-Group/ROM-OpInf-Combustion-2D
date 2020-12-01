@@ -309,7 +309,7 @@ def load_projected_data(trainsize, r):
             return hf["data"][:r], hf["ddt"][:r], hf["time"][:]
 
 
-def load_rom(trainsize, r, reg):
+def load_rom(trainsize, r, regs):
     """Load a single trained ROM.
 
     Parameters
@@ -322,8 +322,8 @@ def load_rom(trainsize, r, reg):
         Dimension of the ROM. Also the number of retained POD modes (left
         singular vectors) used to project the training data.
 
-    reg : float
-        Regularization factor used in the Operator Inference least-squares
+    regs : two positive floats
+        Regularization parameters used in the Operator Inference least-squares
         problem for training the ROM.
 
     Returns
@@ -332,7 +332,7 @@ def load_rom(trainsize, r, reg):
         The trained reduced-order model.
     """
     # Locate the data.
-    data_path = _checkexists(config.rom_path(trainsize, r, reg))
+    data_path = _checkexists(config.rom_path(trainsize, r, regs))
 
     # Extract the trained ROM.
     try:
@@ -340,12 +340,12 @@ def load_rom(trainsize, r, reg):
     except FileNotFoundError as e:
         raise DataNotFoundError(f"could not locate ROM with {trainsize:d} "
                                 f"training snapshots, r={r:d}, "
-                                f"and reg={reg:e}") from e
+                                f"and λ1={regs[0]:e}, λ2={regs[1]:e}") from e
     # Check ROM dimension.
     if rom.r != r:
         raise RuntimeError(f"rom.r = {rom.r} != {r}")
 
-    rom.trainsize, rom.reg = trainsize, reg
+    rom.trainsize, rom.λ1, rom.λ2 = trainsize, regs[0], regs[1]
     return rom
 
 

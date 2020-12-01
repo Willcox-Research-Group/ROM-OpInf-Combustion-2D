@@ -47,9 +47,11 @@ def DIMFMT(r):
     """String format for ROM dimensions."""
     return f"{DIM_PREFIX}{r:03d}"
 
-def REGFMT(λ):
-    """String format for the regularization parmeter."""
-    return f"{REG_PREFIX}{λ:09.0f}"
+def REGFMT(λs):
+    """String format for the regularization parmeters."""
+    if np.isscalar(λs) or len(λs) != 2 or any(λ < 0 for λ in λs):
+        raise ValueError(f"invalid regularization parameters {λs}")
+    return REG_PREFIX + "_".join(f"{λ:06.0f}" for λ in λs)
 
 # Domain geometry -------------------------------------------------------------
 
@@ -92,7 +94,7 @@ MODELFORM = "cAHB"                          # ROM operators to be inferred.
 
 # Input function (Pressure oscillation) ---------------------------------------
 
-U = lambda t: 1e6*(1 + 0.1*np.sin(np.pi*10000*t))
+U = lambda t: 1e6*(1 + 0.1*np.sin(np.pi*1e4*t))
 
 # Matplotlib plot customization -----------------------------------------------
 
@@ -187,13 +189,13 @@ def projected_data_path(trainsize):
     return os.path.join(BASE_FOLDER, TRNFMT(trainsize), PROJECTED_DATA_FILE)
 
 
-def rom_path(trainsize, r, reg):
+def rom_path(trainsize, r, regs):
     """Return the path to the file containing a ROM trained from
     `trainsize` snapshots, projected to an `r`-dimensional space,
-    with regularization factor `reg`.
+    with regularization parameters `regs`.
     """
     folder = _makefolder(BASE_FOLDER, TRNFMT(trainsize), DIMFMT(r))
-    return os.path.join(folder, f"{ROM_PREFIX}_{REGFMT(reg)}.h5")
+    return os.path.join(folder, f"{ROM_PREFIX}_{REGFMT(regs)}.h5")
 
 
 def statistical_features_path():
@@ -227,13 +229,13 @@ def gems_snapshot_path(timeindex):
     return os.path.join(folder, f"snapshot_{timeindex:05d}.dat")
 
 
-def rom_snapshot_path(trainsize, num_modes, reg):
+def rom_snapshot_path(trainsize, num_modes, regs):
     """Return the path to the folder containing reconstructed snapshots
     derived from a ROM trained with `trainsize` snapshots, `num_modes` POD
-    modes, and a regularization factor of `reg`, for use with Tecplot.
+    modes, and regularization parameters of `regs`, for use with Tecplot.
     """
     return _makefolder(tecplot_path(),
-                      f"{TRNFMT(trainsize)}_{DIMFMT(num_modes)}_{REGFMT(reg)}")
+                     f"{TRNFMT(trainsize)}_{DIMFMT(num_modes)}_{REGFMT(regs)}")
 
 
 # Validation ------------------------------------------------------------------
