@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 
 # CHANGE THIS LINE vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 
-BASE_FOLDER = "/storage/combustion_gems_2D"                            # Base folder for all data.
+BASE_FOLDER = ""                            # Base folder for all data.
 
 # CHANGE THIS LINE ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -184,7 +184,8 @@ def basis_path(trainsize):
 
 def projected_data_path(trainsize):
     """Return the path to the file containing `trainsize` training snapshots,
-    projected with a POD basis computed from `trainsize` high-fidelity snapshots.
+    projected with a POD basis computed from `trainsize` high-fidelity
+    snapshots.
     """
     return os.path.join(BASE_FOLDER, TRNFMT(trainsize), PROJECTED_DATA_FILE)
 
