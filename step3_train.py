@@ -252,9 +252,8 @@ def train_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     print(f"TRAINING {λ1grid.size*λ2grid.size} ROMS")
     with utils.timed_block(f"Constructing least-squares solver, r={r:d}"):
         rom = roi.InferredContinuousROM(config.MODELFORM)
-        solver = rom._construct_solver(None, Q_, Qdot_, U, np.ones(d),
-                                       compute_extras=False,
-                                       check_regularizer=False)
+        rom._construct_solver(None, Q_, Qdot_, U, np.ones(d),
+                              compute_extras=False, check_regularizer=False)
 
     # Test each regularization parameter.
     errors_pass = {}
@@ -262,7 +261,7 @@ def train_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     for λ1,λ2 in itertools.product(λ1grid, λ2grid):
         with utils.timed_block(f"Testing ROM with λ1={λ1:5e}, λ2={λ2:5e}"):
             # Train the ROM on all training snapshots.
-            rom._evaluate_solver(solver, regularizer(r, d, λ1, λ2))
+            rom._evaluate_solver(regularizer(r, d, λ1, λ2))
 
             # Simulate the ROM over the full domain.
             with np.warnings.catch_warnings():
@@ -288,7 +287,7 @@ def train_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     λ1,λ2 = err2reg[min(err2reg.keys())]
     with utils.timed_block(f"Best regularization for k={trainsize:d}, "
                            f"r={r:d}: λ1={λ1:.0f}, λ2={λ2:.0f}"):
-        rom._evaluate_solver(solver, regularizer(r, d, λ1, λ2))
+        rom._evaluate_solver(regularizer(r, d, λ1, λ2))
         save_trained_rom(trainsize, r, (λ1,λ2), rom)
 
 
@@ -337,9 +336,8 @@ def train_minimize(trainsize, r, regs, testsize=None, margin=1.5):
     # Create a solver mapping regularization parameters to operators.
     with utils.timed_block(f"Constructing least-squares solver, r={r:d}"):
         rom = roi.InferredContinuousROM(config.MODELFORM)
-        solver = rom._construct_solver(None, Q_, Qdot_, U, np.ones(d),
-                                       compute_extras=False,
-                                       check_regularizer=False)
+        rom._construct_solver(None, Q_, Qdot_, U, np.ones(d),
+                              compute_extras=False, check_regularizer=False)
 
     # Test each regularization parameter.
     def training_error(log10regs):
@@ -351,7 +349,7 @@ def train_minimize(trainsize, r, regs, testsize=None, margin=1.5):
 
         # Train the ROM on all training snapshots.
         with utils.timed_block(f"Testing ROM with λ1={λ1:e}, λ2={λ2:e}"):
-            rom._evaluate_solver(solver, regularizer(r, d, λ1, λ2))
+            rom._evaluate_solver(regularizer(r, d, λ1, λ2))
 
             # Simulate the ROM over the full domain.
             with np.warnings.catch_warnings():
@@ -370,7 +368,7 @@ def train_minimize(trainsize, r, regs, testsize=None, margin=1.5):
         λ1, λ2 = 10**opt_result.x
         with utils.timed_block(f"Best regularization for k={trainsize:d}, "
                                f"r={r:d}: λ1={λ1:.0f}, λ2={λ2:.0f}"):
-            rom._evaluate_solver(solver, regularizer(r, d, λ1, λ2))
+            rom._evaluate_solver(regularizer(r, d, λ1, λ2))
             save_trained_rom(trainsize, r, (λ1,λ2), rom)
     else:
         message = "Regularization search optimization FAILED"
