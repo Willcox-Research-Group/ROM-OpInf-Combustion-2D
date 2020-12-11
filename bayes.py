@@ -11,6 +11,7 @@ import rom_operator_inference as roi
 import config
 import utils
 import data_processing as dproc
+import step4_plot as step4
 
 
 class OpInfPosterior:
@@ -50,9 +51,9 @@ class OpInfPosterior:
         # O = np.vstack([c.rvs() for c in self.components])
         O = np.vstack([mean + cho @ np.random.standard_normal(self._d)
                        for mean, cho in zip(self.means, self._choleskies)])
-        c_, A_, Hc_, B_ = np.split(O, self._indices, axis=1)
+        c_, A_, H_, B_ = np.split(O, self._indices, axis=1)
         rom = roi.InferredContinuousROM(self._modelform)
-        return rom._set_operators(None, c_=c_.flatten(), A_=A_, Hc_=Hc_, B_=B_)
+        return rom._set_operators(None, c_=c_.flatten(), A_=A_, H_=H_, B_=B_)
 
     def predict(self, x0, t):
         """Draw a ROM from the posterior and simulate it from x0 over t."""
@@ -71,7 +72,7 @@ def _data_matrix(trainsize, r):
     R : (r,k) ndarray
         Right-hand side matrix for Operator Inference (time derivatives).
     """
-    X_, Xdot_, t, _ = utils.load_projected_data(trainsize, r)
+    X_, Xdot_, t, = utils.load_projected_data(trainsize, r)
     U = config.U(t).reshape((1,-1))
     D = roi.InferredContinuousROM("cAHB")._construct_data_matrix(X_, U)
     return D, Xdot_
@@ -100,10 +101,12 @@ def _operator_matrix(trainsize, r, reg):
         The trained reduced-order model.
 
     O : (r,d) ndarray
-        Operator matrix O = [c | A | Hc | B].
+        Operator matrix O = [c | A | H | B].
     """
+    if np.isscalar(reg):
+        reg = [reg, reg]
     rom = utils.load_rom(trainsize, r, reg)
-    return rom, np.column_stack((rom.c_, rom.A_, rom.Hc_, rom.B_))
+    return rom, np.column_stack((rom.c_, rom.A_, rom.H_, rom.B_))
 
 
 def construct_posterior(trainsize, r, reg):
@@ -143,20 +146,33 @@ def construct_posterior(trainsize, r, reg):
     with utils.timed_block("Computing posterior parameters"):
         # Construct the data Grammian and the regularization matrix.
         reg2 = reg**2
-        S = la.inv(D.T @ D + reg2*np.eye(d))
+        DTD = D.T @ D
+        DTD = (DTD + DTD.T) / 2     # Numerically symmetrize for stability
+        S = la.inv(DTD + reg2*np.eye(d))
 
         # Numerically symmetrize / sparsify Sigma for stability.
         Sigma_unscaled = (S + S.T) / 2
         Sigma_unscaled[np.abs(Sigma_unscaled) < 1e-16] = 0
+        
+        # Non-negative Grammian eigenvalues
+        gs = la.eigvalsh(DTD)
+        gammas = gs / (reg2 + gs)
+        gamma = gammas.sum()
+        print("Gamma exact:", gammas.sum())
+        print("Gamma estimate:", d)
 
         # Get each covariance matrix.
         covariances = []
         sigma2s = []
+        new_lambdas = []
         for i in range(r):
             o, r = O[i,:], R[i,:]
             sig2 = (np.sum((D @ o - r)**2) + (reg**2)*np.sum(o**2)) / trainsize
             sigma2s.append(sig2)
             covariances.append(sig2*Sigma_unscaled)
+            new_lambdas.append(gamma*sig2/np.sum(o)**2)
+        print("Old log(lambda^2):", np.log10(reg2))
+        print("New log(lambda^2s):", np.log10(new_lambdas))
 
     with utils.timed_block("Building posterior distribution"):
         return rom, OpInfPosterior(O, covariances)
@@ -184,10 +200,10 @@ def simulate_posterior(rom, post, ndraws=10, steps=None):
 
     scales : ndarray
         TODO
-    """
+    """    
     # Load the time domain and initial conditions.
     t = utils.load_time_domain(steps)
-    X_, _, _, scales = utils.load_projected_data(rom.trainsize, rom.r)
+    X_, _, _ = utils.load_projected_data(rom.trainsize, rom.r)
     x0 = X_[:,0]
 
     # Simulate the mean ROM as a reference.
@@ -204,7 +220,7 @@ def simulate_posterior(rom, post, ndraws=10, steps=None):
                 x_roms.append(x_rom)
                 i += 1
 
-    return x_rom_mean, x_roms, scales
+    return x_rom_mean, x_roms
 
 
 def plot_mode_uncertainty(trainsize, mean, draws, modes=8):
@@ -230,9 +246,9 @@ def plot_mode_uncertainty(trainsize, mean, draws, modes=8):
     fig.tight_layout()
 
 
-def plot_pointtrace_uncertainty(trainsize, mean, draws, scales, var="p"):
+def plot_pointtrace_uncertainty(trainsize, mean, draws, var="p"):
     """
-
+    
     Parameters
     ----------
 
@@ -255,7 +271,7 @@ def plot_pointtrace_uncertainty(trainsize, mean, draws, scales, var="p"):
     traces_gems = traces_gems[:,:steps]
 
     # Load the basis rows corresponding to the pressure traces.
-    V, _ = utils.load_basis(trainsize, mean.shape[0])
+    V, scales = utils.load_basis(trainsize, mean.shape[0])
     Velems = V[elems]
 
     # Reconstruct and rescale the simulation results.
@@ -298,14 +314,14 @@ def plot_pointtrace_uncertainty(trainsize, mean, draws, scales, var="p"):
 
 def main(trainsize, r, reg, ndraws=10, steps=50000, modes=4):
     rom, post = construct_posterior(trainsize, r, reg)
-    mean, draws, scales = simulate_posterior(rom, post, ndraws, steps)
+    mean, draws = simulate_posterior(rom, post, ndraws, steps)
     plot_mode_uncertainty(trainsize, mean, draws, modes)
     utils.save_figure("bayes_first4modes.pdf")
-    plot_pointtrace_uncertainty(trainsize, mean, draws, scales, var="p")
+    plot_pointtrace_uncertainty(trainsize, mean, draws, var="p")
     utils.save_figure("bayes_traces_pressure.pdf")
-    plot_pointtrace_uncertainty(trainsize, mean, draws, scales, var="T")
+    plot_pointtrace_uncertainty(trainsize, mean, draws, var="T")
     utils.save_figure("bayes_traces_temperature.pdf")
 
 
 if __name__ == "__main__":
-    main(20000, 44, 29638, 100, 50000, 4)
+    main(20000, 40, 36382, 100, 50000, 4)
