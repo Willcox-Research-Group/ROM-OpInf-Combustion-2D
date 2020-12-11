@@ -52,21 +52,18 @@ def test_scalers(lifted_data):
     # Shift the test data (learning the scaling simultaneously).
     with utils.timed_block("Scaling lifted test data"):
         shifted_data, scales = dproc.scale(lifted_data.copy())
-        assert np.allclose(scales[:,-2:], config.SCALE_TO)
 
     # Verify the scales and that the shift worked for each variable.
     with utils.timed_block("Verifying shift results with scales"):
         for i,v in enumerate(config.ROM_VARIABLES):
             s = slice(i*config.DOF, (i+1)*config.DOF)
-            if v in ["vx", "vy"]:
-                assert -scales[i,0] == scales[i,1]
-                assert scales[i,1] == np.abs(lifted_data[s]).max()
-                assert np.isclose(np.abs(shifted_data[s]).max(), 1)
+            if v in ["p", "T", "xi"]:
+                assert scales[i,0] == np.median(lifted_data[s])
             else:
-                assert lifted_data[s].min() == scales[i,0]
-                assert lifted_data[s].max() == scales[i,1]
-                assert np.isclose(shifted_data[s].min(), scales[i,2])
-                assert np.isclose(shifted_data[s].max(), scales[i,3])
+                assert scales[i,0] == 0
+            assert np.isclose(np.abs(shifted_data[s]).max(), 1)
+            if v in config.SPECIES:
+                assert np.isclose(shifted_data[s].min(), 0)
 
     # Redo the shift with the given scales and compare the results.
     with utils.timed_block("Verifying repeat shift with given scales"):

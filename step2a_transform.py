@@ -1,6 +1,6 @@
 # step2a_transform.py
 """Transform the GEMS data to the learning variables and scale each variable
-to the intervals defined by config.SCALE_TO. Save the processed data.
+appropriately. Save the processed data.
 
 Examples
 --------
@@ -69,8 +69,7 @@ def scale_and_save_data(trainsize, lifted_data, time_domain):
         The time domain corresponding to the lifted snapshots.
     """
     # Scale the learning variables to the bounds in config.SCALE_TO.
-    with utils.timed_block(f"Scaling {trainsize:d} lifted snapshots "
-                           f"(by variable) to bounds in config.SCALE_TO"):
+    with utils.timed_block(f"Scaling {trainsize:d} lifted snapshots"):
         scaled_data, scales = dproc.scale(lifted_data[:,:trainsize].copy())
 
     # Save the lifted, scaled training data.
@@ -80,7 +79,7 @@ def scale_and_save_data(trainsize, lifted_data, time_domain):
             hf.create_dataset("data", data=scaled_data)
             hf.create_dataset("time", data=time_domain[:trainsize])
             hf.create_dataset("scales", data=scales)
-    logging.info(f"Scaled data saved as {save_path}.")
+    logging.info(f"Scaled data saved as {save_path}.\n")
 
     return scaled_data, scales
 
