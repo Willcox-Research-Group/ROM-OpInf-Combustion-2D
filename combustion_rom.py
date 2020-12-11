@@ -105,10 +105,10 @@ class CombustionROM(roi.InferredContinuousROM):
 
         # (compact) Quadratic terms
         _r2 = self.r * (self.r + 1) // 2
-        self.Hc_ = np.row_stack([O1[:,i:i+_r2],
-                                 O2[:,i:i+_r2],
-                                 O3[:,i:i+_r2]])
-        assert self.Hc_.shape == (self.r, _r2)
+        self.H_ = np.row_stack([O1[:,i:i+_r2],
+                                O2[:,i:i+_r2],
+                                O3[:,i:i+_r2]])
+        assert self.H_.shape == (self.r, _r2)
         i += _r2
 
         # (compact) Cubic terms
@@ -172,7 +172,7 @@ class CombustionROM(roi.InferredContinuousROM):
 
     def f_(self, t, x_, u):
         s = slice(self.r1, self.r1+self.v)
-        x = self.c_ + self.A_ @ x_ + self.Hc_ @ kron2c(x_) + self.B_ @ u(t)
+        x = self.c_ + self.A_ @ x_ + self.H_ @ kron2c(x_) + self.B_ @ u(t)
         x[s] += self.Gc_ @ kron3c(x_[s])
         return x
 
