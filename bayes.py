@@ -14,32 +14,12 @@ import data_processing as dproc
 import step4_plot as step4
 
 
-class OpInfPosterior:
-    """Convenience class for sampling the posterior distribution, which
-    is a different multivariate normal for each row of the operator matrix.
-    """
-    def __init__(self, means, covariances, modelform="cAHB"):
-        """Construct the multivariate normal random variables."""
-        assert len(means) == len(covariances)
-        r = len(means)
-        d = 1 + r + r*(r+1)//2 + 1
-        assert means.shape == (r, d)
-        self._d = d
-        
-        # self.components = [stats.multivariate_normal(mean, cov)
-        #                     for mean, cov in zip(means, covariances)]
-        # Initialize the random variables for each operator row.
-        self.means = means
-        self.covariances = covariances
-        self._choleskies = [np.linalg.cholesky(cov) for cov in covariances]
+class _BaseOpInfPosterior:
 
-        # Set other convenience attributes.
-        self._modelform = modelform
-        if self._modelform == "cAHB":
-            self._indices = np.cumsum([1, r, r*(r+1)//2])
-        else:
-            raise NotImplementedError(f"modelform='{self._modelform}'")
-    
+    def _sample_operator_matrix(self):
+        """Sample an operator matrix 'O' from the posterior distribution."""
+        raise NotImplementedError("method must be implemented by child class")
+
     def rvs(self):
         """Do a single sample of the posterior distribution.
 
@@ -48,16 +28,58 @@ class OpInfPosterior:
         rom : roi.InferredContinuousROM
             A trained reduced-order model, representing a posterior draw.
         """
-        # O = np.vstack([c.rvs() for c in self.components])
-        O = np.vstack([mean + cho @ np.random.standard_normal(self._d)
-                       for mean, cho in zip(self.means, self._choleskies)])
+        O = self._sample_operator_matrix()
         c_, A_, H_, B_ = np.split(O, self._indices, axis=1)
         rom = roi.InferredContinuousROM(self._modelform)
         return rom._set_operators(None, c_=c_.flatten(), A_=A_, H_=H_, B_=B_)
 
-    def predict(self, x0, t):
-        """Draw a ROM from the posterior and simulate it from x0 over t."""
-        return self.rvs().predict(x0, t, config.U, method="RK45")
+    def predict(self, q0, t):
+        """Draw a ROM from the posterior and simulate it from q0 over t."""
+        return self.rvs().predict(q0, t, config.U, method="RK45")
+
+
+class OpInfPosteriorUniformCov(_BaseOpInfPosterior):
+    """Convenience class for sampling the posterior distribution, which
+    is a different multivariate normal for each row of the operator matrix.
+
+    This class is for the case where the intial guess for λ is a single
+    number (same penalization for each operator entry), in which case
+    the posterior distributions are N(µi, σi^2 Σ) (same Σ for each i).
+    """
+    def __init__(self, means, sigmas, Sigma, modelform="cAHB"):
+        """Construct the multivariate normal random variables.
+
+        Parameters
+        ----------
+
+        means (r,d) ndarray
+            Mean values for each of the operator entries, i.e., E[O].
+
+        """
+        assert len(means) == len(sigmas)
+        r = len(means)
+        d = 1 + r + r*(r+1)//2 + 1
+        assert means.shape == (r, d)
+        self._d = d
+
+        # Initialize the random variables for each operator row.
+        self.means = means
+        self.sigmas = sigmas
+        self.Sigma = Sigma
+        self._cho = np.linalg.cholesky(Sigma)
+
+        # Set other convenience attributes.
+        self._modelform = modelform
+        if self._modelform == "cAHB":
+            self._indices = np.cumsum([1, r, r*(r+1)//2])
+        else:
+            raise NotImplementedError(f"modelform='{self._modelform}'")
+
+    def _sample_operator_matrix(self):
+        """Sample an operator matrix from the posterior distribution."""
+        rows = [µ + (σ*self._cho) @ np.random.standard_normal(self._d)
+                                for µ, σ in zip(self.means, self.sigmas)]
+        return np.vstack(rows)
 
 
 def _data_matrix(trainsize, r):
@@ -72,10 +94,10 @@ def _data_matrix(trainsize, r):
     R : (r,k) ndarray
         Right-hand side matrix for Operator Inference (time derivatives).
     """
-    X_, Xdot_, t, = utils.load_projected_data(trainsize, r)
+    Q_, Qdot_, t, = utils.load_projected_data(trainsize, r)
     U = config.U(t).reshape((1,-1))
-    D = roi.InferredContinuousROM("cAHB")._construct_data_matrix(X_, U)
-    return D, Xdot_
+    D = roi.InferredContinuousROM("cAHB")._construct_data_matrix(Q_, U)
+    return D, Qdot_
 
 
 def _operator_matrix(trainsize, r, reg):
@@ -109,7 +131,7 @@ def _operator_matrix(trainsize, r, reg):
     return rom, np.column_stack((rom.c_, rom.A_, rom.H_, rom.B_))
 
 
-def construct_posterior(trainsize, r, reg):
+def construct_posterior(trainsize, r, reg, case=3):
     """Construct the mean and covariance matrix for the posterior distribution,
     then create an object for sampling the posterior.
 
@@ -127,6 +149,13 @@ def construct_posterior(trainsize, r, reg):
         The regularization factor used in the Operator Inference least-squares
         problem for training the ROM.
 
+    case : int
+        How to treat the prior regularzation / update.
+        * 3: reg = a scalar, then Λ = λ I
+        * 2: reg = (r,) ndarray, then Λi = λi I
+        * 1: reg = (r,d) ndarray, then Λi = diag(λi1,...,λiM)
+        Case c -> max(1, (c - 1)).
+
     Returns
     -------
     rom : roi.InferredContinuousROM
@@ -135,47 +164,47 @@ def construct_posterior(trainsize, r, reg):
     post : OpInfPosterior
         Posterior distribution object with rvs() sampling method.
     """
-    # Get the data matrices and the (previously) learned operators.
+    # Get the data matrix and solve the Operator Inference problem.
+    Q_, R, t, = utils.load_projected_data(trainsize, r)
+    U = config.U(t).reshape((1,-1))
+    rom = roi.InferredContinuousROM("cAHB").fit(None, Q_, R, U, reg)
+    rom.trainsize = trainsize
+    D = rom._construct_data_matrix(Q_, U)
+    O = rom.operator_matrix_
+
+    # Check matrix shapes.
     d = 1 + r + r*(r+1)//2 + 1
-    D,R = _data_matrix(trainsize, r)
-    rom,O = _operator_matrix(trainsize, r, reg)
     assert D.shape == (trainsize, d)
     assert R.shape == (r, trainsize)
     assert O.shape == (r, d)
 
     with utils.timed_block("Computing posterior parameters"):
-        # Construct the data Grammian and the regularization matrix.
-        reg2 = reg**2
+        # Construct the data Grammian and the covariance matrix.
         DTD = D.T @ D
-        DTD = (DTD + DTD.T) / 2     # Numerically symmetrize for stability
-        S = la.inv(DTD + reg2*np.eye(d))
+        DTD = (DTD + DTD.T) / 2     # Numerically symmetrize.
+        λ = reg**2
+        Λ = λ*np.eye(d)
+        Σ = la.inv(DTD + Λ)
 
-        # Numerically symmetrize / sparsify Sigma for stability.
-        Sigma_unscaled = (S + S.T) / 2
-        Sigma_unscaled[np.abs(Sigma_unscaled) < 1e-16] = 0
-        
-        # Non-negative Grammian eigenvalues
+        # Numerically symmetrize / sparsify covariance for stability.
+        Σ = (Σ + Σ.T) / 2
+        Σ[np.abs(Σ) < 1e-16] = 0
+
+        # Non-negative eigenvalues of data Grammian.
         gs = la.eigvalsh(DTD)
-        gammas = gs / (reg2 + gs)
-        gamma = gammas.sum()
-        print("Gamma exact:", gammas.sum())
+        gamma = np.sum(gs / (λ + gs))
+        print("Gamma exact:", gamma)
         print("Gamma estimate:", d)
 
         # Get each covariance matrix.
-        covariances = []
-        sigma2s = []
-        new_lambdas = []
-        for i in range(r):
-            o, r = O[i,:], R[i,:]
-            sig2 = (np.sum((D @ o - r)**2) + (reg**2)*np.sum(o**2)) / trainsize
-            sigma2s.append(sig2)
-            covariances.append(sig2*Sigma_unscaled)
-            new_lambdas.append(gamma*sig2/np.sum(o)**2)
-        print("Old log(lambda^2):", np.log10(reg2))
-        print("New log(lambda^2s):", np.log10(new_lambdas))
+        Onorms = np.sum(O**2, axis=1)       # ||o_i||^2.
+        σ2s = (np.sum((D @ O.T - R.T)**2, axis=0) + λ*Onorms) / trainsize
+        new_lambdas = gamma*σ2s/Onorms    # gamma
+        print("Old log(λ):", np.log10(λ))
+        print("New log(λ):", np.log10(new_lambdas))
 
     with utils.timed_block("Building posterior distribution"):
-        return rom, OpInfPosterior(O, covariances)
+        return rom, OpInfPosteriorUniformCov(O, np.sqrt(σ2s), Σ, "cAHB")
 
 
 def simulate_posterior(rom, post, ndraws=10, steps=None):
@@ -185,42 +214,42 @@ def simulate_posterior(rom, post, ndraws=10, steps=None):
     rom : ...
 
     post : OpInfPosterior
-    
+
     ndraws : int
 
     steps : int
 
     Returns
     -------
-    x_rom_mean : (r,steps) ndarray
+    q_rom_mean : (r,steps) ndarray
         TODO
 
-    x_roms : list
+    q_roms : list
         TODO
 
     scales : ndarray
         TODO
-    """    
+    """
     # Load the time domain and initial conditions.
     t = utils.load_time_domain(steps)
-    X_, _, _ = utils.load_projected_data(rom.trainsize, rom.r)
-    x0 = X_[:,0]
+    Q_, _, _ = utils.load_projected_data(rom.trainsize, rom.r)
+    q0 = Q_[:,0]
 
     # Simulate the mean ROM as a reference.
     with utils.timed_block(f"Simulating mean ROM"):
-        x_rom_mean = rom.predict(x0, t, config.U, method="RK45")
-    
+        q_rom_mean = rom.predict(q0, t, config.U, method="RK45")
+
     # Get ndraws simulation samples.
-    x_roms = []
+    q_roms = []
     i = 0
     while i < ndraws:
         with utils.timed_block(f"Simulating posterior draw ROM {i+1}"):
-            x_rom = post.predict(x0, t)
-            if x_rom.shape[1] == t.shape[0]:
-                x_roms.append(x_rom)
+            q_rom = post.predict(q0, t)
+            if q_rom.shape[1] == t.shape[0]:
+                q_roms.append(q_rom)
                 i += 1
 
-    return x_rom_mean, x_roms
+    return q_rom_mean, q_roms
 
 
 def plot_mode_uncertainty(trainsize, mean, draws, modes=8):
@@ -248,7 +277,7 @@ def plot_mode_uncertainty(trainsize, mean, draws, modes=8):
 
 def plot_pointtrace_uncertainty(trainsize, mean, draws, var="p"):
     """
-    
+
     Parameters
     ----------
 
