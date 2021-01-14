@@ -24,10 +24,10 @@ class OpInfPosterior:
 
         Parameters
         ----------
-        means: list of r (d,) ndarrays or (r,d) ndarray
+        means : list of r (d,) ndarrays or (r,d) ndarray
             Mean values for each of the operator entries, i.e., Mean(O).
 
-        Sigmas: list of r (d,d) ndarrays or (r,d,d) ndarray
+        Sigmas : list of r (d,d) ndarrays or (r,d,d) ndarray
             Covariance matrices for each row of the operator matrix.
             That is, Sigmas[i] = Covariance(O[i])
 
@@ -91,19 +91,23 @@ class OpInfPosteriorUniformCov(OpInfPosterior):
     """Convenience class for sampling the posterior distribution, which
     is a different multivariate normal for each row of the operator matrix.
 
-    This class is for the case where the intial guess for λ is a single
-    number (same penalization for each operator entry), in which case
-    the posterior distributions are N(µi, σi^2 Σ) (same Σ for each i).
+    This class is only for the special case in which the intial guess for λ
+    is a single number (same penalization for each operator entry), resulting
+    in the posterior distributions N(µi, σi^2 Σ) (i.e., same Σ for each i).
     """
     def __init__(self, means, sigmas, Sigma, modelform="cAHB"):
         """Construct the multivariate normal random variables.
 
         Parameters
         ----------
-
-        means (r,d) ndarray
+        means : (r,d) ndarray
             Mean values for each of the operator entries, i.e., E[O].
 
+        sigmas : list of r floats or (r,) ndarray
+            Scaling factors for each covariance matrix.
+
+        Sigma : (d,d) ndarray
+            Nonscaled covariance matrix for each posterior.
         """
         self._init_means(means, modelform)
 
@@ -119,8 +123,8 @@ class OpInfPosteriorUniformCov(OpInfPosterior):
 
     def _sample_operator_matrix(self):
         """Sample an operator matrix from the posterior distribution."""
-        rows = [µ + (σ*self._cho) @ np.random.standard_normal(self._d)
-                                for µ, σ in zip(self.means, self._sigmas)]
+        rows = [µ + (σ*self._cho) @ np.random.standard_normal(size=self._d)
+                                    for µ, σ in zip(self.means, self._sigmas)]
         return np.vstack(rows)
 
 
@@ -140,24 +144,30 @@ def construct_posterior(trainsize, r, reg, case=2):
         The dimension of the ROM. This is also the number of retained POD modes
         (left singular vectors) used to project the training data.
 
-    reg : float
-        The regularization factor used in the Operator Inference least-squares
-        problem for training the ROM.
+    reg : float or (r,) ndarray or (r,d) ndarray
+        The regularization parameter(s) used in the Operator Inference
+        least-squares problem for training the ROM.
+        * float: Λ = λi I
+        * (r,) ndarray: Λi = λi I
+        * (r,d) ndarray: Λi = diag(λi1,...,λid) (requires case=1)
 
     case : int
         How to treat the regularization update.
-        * 2: Λi = λi I (learn a λ for each row of O).
-        * 1: Λi = diag(λi1,...,λiM) (learn a λ for each entry of O).
+        * 2: learn a new λ for each ROW of the operator matrix.
+        * 1: learn a new λ for each ENTRY of the operator matrix.
 
     Returns
     -------
-    rom : roi.InferredContinuousROM
-        The trained reduced-order model (mean of the posterior).
-
     post : OpInfPosterior
         Posterior distribution object with rvs() sampling method.
+    
+    reg_new : (r,) ndarray or (r,d) ndarray
+        The Bayesian update for the regularization parameters.
+        * case == 2 -> (r,), a new λ for each ROW of the operator matrix.
+        * case == 1 -> (r,d), a new λ for each ENTRY of the operator matrix.
     """
-    # Get the data matrix and solve the Operator Inference problem.
+    # Get the data matrix and solve the Operator Inference problem,
+    # using the initial guess for the regularization parameter(s).
     Q_, R, t, = utils.load_projected_data(trainsize, r)
     U = config.U(t).reshape((1,-1))
     rom = roi.InferredContinuousROM("cAHB").fit(None, Q_, R, U, reg)
@@ -172,7 +182,7 @@ def construct_posterior(trainsize, r, reg, case=2):
     assert O.shape == (r, d)
 
     def symmetrize(S, sparsify=False):
-        """Numerically symmetrize / sparsify covariance for stability."""
+        """Numerically symmetrize / sparsify (e.g., for covariance)."""
         S = (S + S.T) / 2
         if sparsify:
             S[np.abs(S) < 1e-16] = 0
@@ -181,61 +191,82 @@ def construct_posterior(trainsize, r, reg, case=2):
     with utils.timed_block("Building posterior distribution"):
         # Precompute some quantities for posterior parameters.
         DTD = symmetrize(D.T @ D)
-        Onorms = np.sum(O**2, axis=1)                   # ||o_i||^2.
+        Onorm2s = np.sum(O**2, axis=1)                  # ||o_i||^2.
         residual2s = np.sum((D @ O.T - R.T)**2, axis=0) # ||Do_i - r_i||^2.
+
+#         print("||o_i||^2:", Onorm2s)
+#         print(f"{Onorm2s.mean()} ± {Onorm2s.std()}")
+#         print("||Do_i - r_i||^2:", residual2s)
+#         print(f"{residual2s.mean()} ± {residual2s.std()}")
+#         input("Press ENTER to continue")
 
         # Calculate posterior ROM distribution.
         if np.isscalar(reg):
-            λ = reg**2
-            Λ = λ*np.eye(d)
+            λ2 = reg**2
+            Λ = λ2*np.eye(d)
             Σ = symmetrize(la.inv(DTD + Λ), sparsify=True)
-            σ2s = (residual2s + np.sum(λ*O**2, axis=1)) / trainsize
+            σ2s = (residual2s + λ2*Onorm2s) / trainsize
             post = OpInfPosteriorUniformCov(O, np.sqrt(σ2s), Σ, "cAHB")
             if case == 1:
-                Σs = np.array([σ2i * Σ for σ2i in σ2s])
+                Σs = np.array([σ2i * Σ for σ2i in σ2s]) # = post.covariances
         else:
-            λ = np.array(reg)
-            if λ.shape == (r,):
+            λ2 = np.array(reg)**2
+            if λ2.shape == (r,):
                 I = np.eye(d)
-                Λs = [λi*I for λi in λ]
-            elif λ.shape == (r,d):
+                Λs = [λ2i*I for λ2i in λ2]
+                σ2s = (residual2s + λ2*Onorm2s) / trainsize
+            elif λ2.shape == (r,d):
                 if case != 1:
                     raise ValueError("2D reg only compatible with case=1")
-                Λs = [np.diag(λi) for λi in λ]
+                Λs = [np.diag(λ2i) for λ2i in λ2]
+                σ2s = (residual2s + np.sum(λ2*O**2, axis=1)) / trainsize
             else:
                 raise ValueError("invalid shape(reg)")
-            σ2s = (residual2s + np.sum(λ*O**2, axis=1)) / trainsize
+            assert len(Λs) == len(σ2s) == r
             Σs = np.array([σ2i * symmetrize(la.inv(DTD + Λi), sparsify=True)
                                                 for σ2i, Λi in zip(σ2s, Λs)])
-            post = OpInfPosterior(O, Σs, modelform="cAHB")
+            post = None
+            # post = OpInfPosterior(O, Σs, modelform="cAHB")
 
     with utils.timed_block("Calculating updated regularization parameters"):
-        if case == 2:
-            # Non-negative eigenvalues of data Grammian.
-            gs = la.eigvalsh(DTD)
-            gamma = np.sum(gs / (λ + gs)) # What if λ = [λ1, ..., λr]?
+        if case == 2:  # So λ2 is a scalar or (r,) ndarray
+            gs = la.eigvalsh(DTD)   # Non-negative eigenvalues of data Grammian.
+            if np.isscalar(reg):    # Scalar regularization parameter
+                gamma = np.sum(gs / (λ2 + gs))
+            else:
+                gamma = np.sum(gs / (λ2.reshape((-1,1)) + gs), axis=1)
+                assert len(gamma) == r
             # print("Gamma exact:", gamma)
-            # print("Gamma estimate:", d)
-            λ_new = gamma*σ2s/Onorms    # gamma
-            print("\nOld log(λ):", np.log10(λ))
-            print("New log(λ):", np.log10(λ_new), sep='\n')
+            # print("Gamma estimate (d):", d)
+            λ2_new = gamma*σ2s/Onorm2s
         elif case == 1:
-            xi = np.empty_like(O)
+            # TODO: verify and fix. Note use of λ2_new, not λ_new.
+            xi = np.zeros_like(O)
+            badmask = np.ones_like(O, dtype=bool)
+            pairs = []
             for i in range(O.shape[0]):
                 for j in range(O.shape[1]):
-                    # print(Σs[i,j,j], O[i,j]**2)
+                    pairs.append((Σs[i,j,j], O[i,j]**2))
                     s = Σs[i,j,j] / O[i,j]**2
-                    xi[i,j] = 1 - s + s**2 - s**3 + s**4 - s**5 + s**6 - s**7
-            print(xi.min(), xi.max(), xi.mean(), xi.std())
-            λ_new = (xi / O**2) * σ2s.reshape((-1,1))
-            λ_new = (1 / O**2) * σ2s.reshape((-1,1))
-            import sys; sys.exit(1)
+                    if s < 1:
+                        xi[i,j] = 1 - s + s**2 - s**3 + s**4 - s**5 + s**6
+                        badmask[i,j] = False
+            λ2_new = (xi / O**2) * σ2s.reshape((-1,1))
+            λ2_new[badmask] = .01
+            assert λ2_new.shape == (r,d)
+
+            pairs = np.array(pairs)
+            bad = (pairs[:,0] > pairs[:,1])
+            plt.plot(pairs[~bad,0], pairs[~bad,1], 'C0.', ms=2, alpha=.2)
+            plt.plot(pairs[ bad,0], pairs[ bad,1], 'C3.', ms=2, alpha=.2)
+            plt.show()
+
         else:
             raise ValueError(f"invalid case ({case})")
 
-    return post, λ_new
+    return post, np.sqrt(λ2_new)
 
-
+# -----------------------------------------------------------------------------
 def simulate_posterior(trainsize, post, ndraws=10, steps=None):
     """
     Parameters
@@ -286,9 +317,10 @@ def plot_mode_uncertainty(trainsize, mean, draws, modes=8):
     steps = mean.shape[1]
     t = utils.load_time_domain(steps)
 
-    with utils.timed_block("Calculating sample deviations"):
-        offsets = [draw - mean for draw in draws]
-        deviations = np.std(offsets, axis=0)
+    if len(draws) > 0:
+        with utils.timed_block("Calculating sample deviations"):
+            offsets = [draw - mean for draw in draws]
+            deviations = np.std(offsets, axis=0)
 
     nrows = (modes//2) + 1 if modes % 2 else modes//2
     fig, axes = plt.subplots(nrows, 2)
@@ -296,9 +328,11 @@ def plot_mode_uncertainty(trainsize, mean, draws, modes=8):
         ax.plot(t, mean[i,:], 'C0-', lw=1)
         # for draw in draws:
         #     ax.plot(t, draw[i,:], 'C0-', lw=.5, alpha=.2)
-        ax.fill_between(t, mean[i,:] - 3*deviations[i,:],
-                           mean[i,:] + 3*deviations[i,:], alpha=.5)
-        ax.axvline(t[trainsize], color='k', lw=1)
+        if len(draws) > 0:
+            ax.fill_between(t, mean[i,:] - 3*deviations[i,:],
+                               mean[i,:] + 3*deviations[i,:], alpha=.5)
+        if steps > trainsize:
+            ax.axvline(t[trainsize], color='k', lw=1)
         # ax.set_title(fr"POD mode ${i+1}$")
         ax.set_xlim(t[0], t[-1])
         ax.set_xticks(np.arange(t[0], t[-1]+.001, .002))
@@ -375,12 +409,44 @@ def main(trainsize, r, reg, ndraws=10, steps=50000, modes=4):
     post = construct_posterior(trainsize, r, reg, case=2)[0]
     mean, draws = simulate_posterior(trainsize, post, ndraws, steps)
     plot_mode_uncertainty(trainsize, mean, draws, modes)
-    utils.save_figure("bayes_first4modes.pdf")
+    utils.save_figure("bayes/bayes_first4modes.pdf")
     plot_pointtrace_uncertainty(trainsize, mean, draws, var="p")
-    utils.save_figure("bayes_traces_pressure.pdf")
+    utils.save_figure("bayes/bayes_traces_pressure.pdf")
     plot_pointtrace_uncertainty(trainsize, mean, draws, var="T")
-    utils.save_figure("bayes_traces_temperature.pdf")
+    utils.save_figure("bayes/bayes_traces_temperature.pdf")
+
+
+def iterate(trainsize, r, reg, niter, case=2):
+    """Do the iteration several times, plotting the evolution thereof."""
+    print(f"Initialization: reg = {reg}")
+    means = np.empty(niter+1, dtype=float)
+    stds = means.copy()
+    means[0], stds[0] = reg**2, 0
+    iterations = np.arange(niter+1)
+    for n in iterations[1:]:
+        post, reg = construct_posterior(trainsize, r, reg, case=case)
+        print(f"Iteration {n}: reg = {reg}")
+        means[n], stds[n] = np.mean(reg**2), np.std(reg**2)
+    print("Relative change in mean at final update:",
+          f"{abs(means[-1] - means[-2]) / abs(means[-1]):%}")
+
+    # Plot progression of regularization statistics.
+    plt.semilogy(iterations, means, 'C0.-', ms=10)
+    plt.fill_between(iterations, means-stds, means+stds,
+                     color="C0", alpha=.5)
+    plt.xlabel("Bayes Iteration")
+    plt.ylabel(r"Regularization $\lambda$ ($\mu \pm \sigma$)")
+    plt.title("Iterative Bayesian Regularization Update: Combustion")
+    plt.xlim(right=niter)
+    utils.save_figure(f"bayes/iteration_case{case}.pdf")
+
+    # Try simulating the final model.
+    mean, draws = simulate_posterior(trainsize, post, 0, trainsize)
+    plot_mode_uncertainty(trainsize, mean, draws, 4)
+    utils.save_figure(f"bayes/iter{case}_first4modes.pdf")
+
 
 
 if __name__ == "__main__":
-    main(20000, 40, 36382, 100, 50000, 4)
+    # main(20000, 40, 36382, 100, 50000, 4)
+    iterate(20000, 40, 36382, 15, case=1)
