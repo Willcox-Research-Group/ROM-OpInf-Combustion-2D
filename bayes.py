@@ -1,6 +1,5 @@
 # bayes.py
-"""Bayesian interpretation of Operator Inference for this problem.
-"""
+"""Bayesian interpretation of Operator Inference for this problem."""
 
 import numpy as np
 import scipy.linalg as la
@@ -65,7 +64,7 @@ class OpInfPosterior:
         """Construct the ROM from the operator matrix."""
         c_, A_, H_, B_ = np.split(O, self._indices, axis=1)
         rom = roi.InferredContinuousROM(self._modelform)
-        return rom._set_operators(None, c_=c_.flatten(), A_=A_, H_=H_, B_=B_)
+        return rom.set_operators(None, c_=c_.flatten(), A_=A_, H_=H_, B_=B_)
 
     @property
     def mean_rom(self):
@@ -173,7 +172,7 @@ def construct_posterior(trainsize, r, reg, case=2):
     rom = roi.InferredContinuousROM("cAHB").fit(None, Q_, R, U, reg)
     rom.trainsize = trainsize
     D = rom._assemble_data_matrix(Q_, U)
-    O = rom.operator_matrix_
+    O = rom.O_
 
     # Check matrix shapes.
     d = 1 + r + r*(r+1)//2 + 1
@@ -448,5 +447,5 @@ def iterate(trainsize, r, reg, niter, case=2):
 
 
 if __name__ == "__main__":
-    # main(20000, 40, 36382, 100, 50000, 4)
-    iterate(20000, 40, 36382, 15, case=1)
+    main(20000, 40, 36382, 100, 50000, 4)
+#     iterate(20000, 40, 36382, 15, case=2)
