@@ -15,7 +15,7 @@ _sglob = lambda x: sorted(glob.glob(x))     # Sorted glob().
 
 _trnpat = re.compile(fr".*{config.TRN_PREFIX}(\d+)")
 _dimpat = re.compile(fr".*{config.DIM_PREFIX}(\d+)")
-_regpat = re.compile(fr".*{config.ROM_PREFIX}_{config.REG_PREFIX}(\d+)\.h5")
+_regpat = re.compile(fr".*{config.ROM_PREFIX}_{config.REG_PREFIX}([\d_]+)\.h5")
 
 def _get_trn(foldername):
     result = _trnpat.findall(foldername)
@@ -25,9 +25,9 @@ def _get_dim(foldername):
     result = _dimpat.findall(foldername)
     return int(result[0]) if result else None
 
-def _get_reg(filename):
+def _get_regs(filename):
     result = _regpat.findall(filename)
-    return int(result[0]) if result else None
+    return [int(reg) for reg in result[0].split('_')] if result else None
 
 
 # Main routines ---------------------------------------------------------------
@@ -44,8 +44,8 @@ def print_rom_folder(folder):
         else:
             print(f"{_s*3}{basename}")
     for dfile in romfiles:
-        reg = _get_reg(dfile)
-        print(f"{_s*3}* Trained ROM with λ = {reg}"
+        regs = _get_regs(dfile)
+        print(f"{_s*3}* Trained ROM with λ1 = {regs[0]}, λ2 = {regs[1]}"
               f" ({os.path.basename(dfile)})")
 
 

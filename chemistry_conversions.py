@@ -112,12 +112,12 @@ def specific_gas_constant(masses):
     return 1000 * config.R_UNIVERSAL * Mavg_inv
 
 
-def specific_volume(P, T, masses):
+def specific_volume(p, T, masses):
     """Compute the specific volume.
 
     Parameters
     ----------
-    P : (domain_size, num_snapshots) ndarray
+    p : (domain_size, num_snapshots) ndarray
         Pressure [Pa = kg/ms^2].
 
     T : (domain_size, num_snapshots) ndarray
@@ -132,21 +132,21 @@ def specific_volume(P, T, masses):
         Specific volume [m^3/kg], according to the ideal gas law.
     """
     # Check shapes
-    _check_shapes(masses, P, T)
+    _check_shapes(masses, p, T)
 
     # Compute the specific gass constant at each space-time point.
     R_specific = specific_gas_constant(masses)
 
     # Compute the density of the mixture (ideal gas law).
-    return R_specific * T / P
+    return R_specific * T / p
 
 
-def temperature(P, xi, molars):
+def temperature(p, xi, molars):
     """Compute temperature from (predicted) states using the ideal gas law.
 
     Parameters
     ----------
-    P : (domain_size, num_snapshots) ndarray
+    p : (domain_size, num_snapshots) ndarray
         Pressure [Pa = kg/ms^2].
 
     xi : (domain_size, num_snapshots) ndarray
@@ -164,5 +164,5 @@ def temperature(P, xi, molars):
     R_specific = specific_gas_constant(molar2mass(molars, xi))
 
     # Compute temperature (ideal gas law).
-    return P * xi / R_specific
+    return p * xi / R_specific
 
