@@ -8,8 +8,8 @@ variable appropriately. Save the processed data (see also step2a_transform.py).
 scaled snapshot training data and save the basis (see also step2b_basis.py).
 
 3. Project the lifted, scaled snapshot training data to the subspace spanned by
-the columns of the POD basis V, compute velocity information for the projected
-snapshots, and save the projected data (see also step2c_project.py).
+the columns of the POD basis V, compute time derivative information for the
+projected snapshots, and save the projected data (see also step2c_project.py).
 
 These three steps can be performed separately with
 * step2a_transform.py,
@@ -19,7 +19,7 @@ These three steps can be performed separately with
 Examples
 --------
 # Get training data from 10,000 snapshots and with a maximum of 50 POD modes.
-$ python3 step2_preprocess.py 10000 24
+$ python3 step2_preprocess.py 10000 50
 
 # Get training data from 15,000 snapshots and with a maximum of 100 POD modes.
 $ python3 step2_preprocess.py 15000 100
@@ -36,13 +36,6 @@ Loading Results
 Command Line Arguments
 ----------------------
 """
-import os
-import h5py
-import logging
-import numpy as np
-
-import rom_operator_inference as roi
-
 import utils
 import step2a_transform as step2a
 import step2b_basis as step2b

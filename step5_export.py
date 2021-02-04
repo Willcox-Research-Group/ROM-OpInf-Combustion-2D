@@ -1,5 +1,5 @@
 # step5_export.py
-"""Write Tecplot-friendly ASCII (text) files from simulation data.
+"""Write Tecplot-readable ASCII (text) files from simulation data.
 The resulting files can be used with Tecplot to visualize snapshots
 over the entire computational domain.
 

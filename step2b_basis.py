@@ -23,14 +23,12 @@ Command Line Arguments
 """
 import h5py
 import logging
-import numpy as np
 import scipy.linalg as la
 
 import rom_operator_inference as roi
 
 import config
 import utils
-import data_processing as dproc
 
 
 def compute_and_save_pod_basis(num_modes, training_data, scales):

@@ -1,38 +1,36 @@
 # step3_train.py
-"""Use projected data to learn reduced-order models via Operator Inference
-with optimal regularization parameter selection.
+"""Use projected data to learn reduced-order models via Tikhonov-regularized
+Operator Inference with regularization hyperparameter selection.
 
 Examples
 --------
-## --single: train and save a ROM with given regularization parameters.
+## --single: train and save a single ROM for a given λ1, λ2.
 
-# Use 10,000 projected snapshots to learn a ROM of dimension r = 46
+# Use 10,000 projected snapshots to learn a ROM of dimension r = 24
 # with regularization parameters λ1 = 400, λ2 = 21000.
-$ python3 step3_train.py --single 10000 --modes 24 --regularization 400 21000
+$ python3 step3_train.py --single 10000 24 400 21000
 
-## --gridsearch: train over a grid of reglarization parameter candidates,
-                 saving only the best resulting ROM.
+## --gridsearch: train over a grid of candidates for λ1 and λ2, saving
+                 only the stable ROM with least training error.
 
-# Use 20,000 projected snapshots to learn a ROM of dimension 92 and save the
-# one with the regularization resulting in the least training error and for
-# which the integrated POD modes stay within 150% of the training data in
+# Use 20,000 projected snapshots to learn a ROM of dimension r = 40 and save
+# the one with the regularization resulting in the least training error and
+# for which the integrated POD modes stay within 150% of the training data in
 # magnitude for 60,000 time steps. For the regularization parameters, test
-# each point in a 4x5 grid of [500, 9000] x [8000, 10000]
-$ python3 step3_train.py --gridsearch 10000 --modes 92
-                         --regularization 5e2 9e3 4 8e3 1e4 5
+# each point in the 4x5 logarithmically-spaced grid [500,9000]x[8000,10000]
+$ python3 step3_train.py --gridsearch 10000 40 5e2 9e3 4 8e3 1e4 5
                          --testsize 60000 --margin 1.5
 
-## --minimize: given initial guesses for the regularization parameters,
-               use a Nelder-Mead search to train and save a ROM that is
-               locally optimal in the regularization parameter space.
+## --minimize: given initial guesses for λ1 and λ2, use Nelder-Mead search
+               to train and save a ROM that is locally optimal in the
+               regularization hyperparameter space.
 
-# Use 30,000 projected snapshots to learn a ROM of dimension 141 and save the
-# one with the regularization resulting in the least training error and for
-# which the integrated POD modes stay within 150% of the training data in
+# Use 10,000 projected snapshots to learn a ROM of dimension r = 30 and save
+# the one with the regularization resulting in the least training error and
+# for which the integrated POD modes stay within 150% of the training data in
 # magnitude for 60,000 time steps. For the regularization parameters, search
 # starting from λ1 = 300, λ2 = 7000.
-$ python3 step3_train.py --minimize 10000 --modes 141
-                         --regularization 300 7000
+$ python3 step3_train.py --minimize 10000 30 300 7000
                          --testsize 60000 --margin 1.5
 
 Loading Results
@@ -46,12 +44,10 @@ Loading Results
 Command Line Arguments
 ----------------------
 """
-import h5py
 import logging
 import itertools
 import numpy as np
 import scipy.optimize as opt
-import matplotlib.pyplot as plt
 
 import rom_operator_inference as roi
 
@@ -168,7 +164,8 @@ def save_trained_rom(trainsize, r, regs, rom):
 # Main routines ===============================================================
 
 def train_single(trainsize, r, regs):
-    """Train and save ROMs with the given dimension and regularization.
+    """Train and save a ROM with the given dimension and regularization
+    hyperparameters.
 
     Parameters
     ----------
@@ -180,8 +177,8 @@ def train_single(trainsize, r, regs):
         (left singular vectors) used to project the training data.
 
     regs : two positive floats
-        Regularization parameters (non-quadratic, quadratic) to use in the
-        Operator Inference least-squares problem for training the ROM.
+        Regularization hyperparameters (non-quadratic, quadratic) to use in
+        the Operator Inference least-squares problem for training the ROM.
     """
     utils.reset_logger(trainsize)
 
@@ -204,8 +201,8 @@ def train_single(trainsize, r, regs):
 
 def train_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     """Train ROMs with the given dimension over a grid of potential
-    regularization parameters, saving only the ROM with the least training
-    error that satisfies a bound on the integrated POD coefficients.
+    regularization hyperparameters, saving only the ROM with the least
+    training error that satisfies a bound on the integrated POD coefficients.
 
     Parameters
     ----------
@@ -295,7 +292,7 @@ def train_minimize(trainsize, r, regs, testsize=None, margin=1.5):
     """Train ROMs with the given dimension(s), saving only the ROM with
     the least training error that satisfies a bound on the integrated POD
     coefficients, using a search algorithm to choose the regularization
-    parameter.
+    hyperparameters.
 
     Parameters
     ----------
@@ -306,8 +303,8 @@ def train_minimize(trainsize, r, regs, testsize=None, margin=1.5):
         Dimension of the desired ROM. Also the number of retained POD modes
         (left singular vectors) used to project the training data.
 
-    regs0 : two positive floats
-        Initial guesses for the regularization parameters (non-quadratic,
+    regs : two positive floats
+        Initial guesses for the regularization hyperparameters (non-quadratic,
         quadratic) to use in the Operator Inference least-squares problem
         for training the ROM.
 
@@ -376,6 +373,93 @@ def train_minimize(trainsize, r, regs, testsize=None, margin=1.5):
         logging.info(message)
 
 
+# First draft approach: single regularization parameter, i.e., ================
+# equally penalize all entries of the ROM operators. ==========================
+def _train_minimize_1D(trainsize, r, regs, testsize=None, margin=1.5):
+    """Train ROMs with the given dimension(s), saving only the ROM with
+    the least training error that satisfies a bound on the integrated POD
+    coefficients, using a search algorithm to choose the regularization
+    parameter.
+
+    Parameters
+    ----------
+    trainsize : int
+        Number of snapshots to use to train the ROM.
+
+    r : int
+        Dimension of the desired ROM. Also the number of retained POD modes
+        (left singular vectors) used to project the training data.
+
+    regs : positive floats
+        Bounds for the regularization parameter to use in the Operator
+        Inference least-squares problem for training the ROM.
+
+    testsize : int
+        Number of time steps for which a valid ROM must satisfy the POD bound.
+
+    margin : float >= 1
+        Amount that the integrated POD coefficients of a valid ROM are allowed
+        to deviate in magnitude from the maximum magnitude of the training
+        data Q, i.e., bound = margin * max(abs(Q)).
+    """
+    utils.reset_logger(trainsize)
+
+    # Parse aguments.
+    d = check_lstsq_size(trainsize, r)
+    log10regs = np.log10(check_regs(regs))
+
+    # Load training data.
+    t = utils.load_time_domain(testsize)
+    Q_, Qdot_, _ = utils.load_projected_data(trainsize, r)
+    U = config.U(t[:trainsize])
+
+    # Compute the bound to require for integrated POD modes.
+    B = margin * np.abs(Q_).max()
+
+    # Create a solver mapping regularization parameters to operators.
+    with utils.timed_block(f"Constructing least-squares solver, r={r:d}"):
+        rom = roi.InferredContinuousROM(config.MODELFORM)
+        rom._construct_solver(None, Q_, Qdot_, U, 1, compute_extras=False)
+
+    # Test each regularization parameter.
+    def training_error(log10reg):
+        """Return the training error resulting from the regularization
+        hyperparameters λ1 = λ2 = 10^log10reg. If the resulting model
+        violates the POD bound, return "infinity".
+        """
+        λ = 10**log10reg
+
+        # Train the ROM on all training snapshots.
+        with utils.timed_block(f"Testing ROM with λ={λ:e}"):
+            rom._evaluate_solver(λ)
+
+            # Simulate the ROM over the full domain.
+            with np.warnings.catch_warnings():
+                np.warnings.simplefilter("ignore")
+                q_rom = rom.predict(Q_[:,0], t, config.U, method="RK45")
+
+            # Check for boundedness of solution.
+            if not is_bounded(q_rom, B):
+                return _MAXFUN
+
+            # Calculate integrated relative errors in the reduced space.
+            return roi.post.Lp_error(Q_, q_rom[:,:trainsize], t[:trainsize])[1]
+
+    opt_result = opt.minimize_scalar(training_error,
+                                     method="bounded", bounds=log10regs)
+    if opt_result.success and opt_result.fun != _MAXFUN:
+        λ = 10**opt_result.x
+        with utils.timed_block(f"Best regularization for k={trainsize:d}, "
+                               f"r={r:d}: λ={λ:.0f}"):
+            rom._evaluate_solver(λ)
+            save_trained_rom(trainsize, r, (λ,λ), rom)
+    else:
+        message = "Regularization search optimization FAILED"
+        print(message)
+        logging.info(message)
+
+
+
 # =============================================================================
 if __name__ == "__main__":
     # Set up command line argument parsing.
@@ -391,21 +475,27 @@ if __name__ == "__main__":
     # Parser subcommands
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--single", action="store_true",
-                       help="train and save a single ROM")
+                       help="train and save a single ROM with regularization "
+                            "hyperparameters REG1 (non-quadratic penalizer) "
+                            "and REG2 (quadratic penalizer)")
     group.add_argument("--gridsearch", action="store_true",
-                       help="train over a grid of regularization parameter "
-                            "candidates, saving only the best resulting ROM")
+                       help="train over the REG3xREG6 grid "
+                            "[REG1,REG2]x[REG4,REG5] of regularization "
+                            "hyperparameter candidates, saving only the "
+                            "stable ROM with the least training error")
     group.add_argument("--minimize", action="store_true",
-                       help="given initial guesses for the regularization "
-                            "parameters, use a Nelder-Mead search to train "
-                            "and save a ROM that is locally optimal in the "
-                            "regularization parameter space")
+                       help="given initial guesses REG1 (non-quadratic  "
+                            "penalizer) and REG2 (quadratic penalizer), use "
+                            "Nelder-Mead search to train and save a ROM that "
+                            "is locally optimal in the regularization "
+                            "hyperparameter space")
 
     # Positional arguments.
     parser.add_argument("trainsize", type=int,
                         help="number of snapshots in the training data")
     parser.add_argument("modes", type=int,
-                        help="number of POD modes used to project the data")
+                        help="number of POD modes used to project the data "
+                             "(dimension of ROM to be learned)")
     parser.add_argument("regularization", type=float, nargs='+',
                         help="regularization parameters for ROM training")
 
@@ -413,10 +503,10 @@ if __name__ == "__main__":
     parser.add_argument("--testsize", type=int, default=None,
                         help="number of time steps for which the trained ROM "
                              "must satisfy the POD bound")
-    parser.add_argument("--margin", type=float, default=1.5,
-                        help="percent that the POD coefficients of the "
-                             "ROM simulation are allowed to deviate in "
-                             "magnitude from the training data")
+    parser.add_argument("--margin", type=float, default=1.1,
+                        help="factor by which the POD coefficients of the ROM "
+                             "simulation are allowed to deviate in magnitude "
+                             "from the training data (default 1.1)")
 
     # Parse arguments and do one of the main routines.
     args = parser.parse_args()

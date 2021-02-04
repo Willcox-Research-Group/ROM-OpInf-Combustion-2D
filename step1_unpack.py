@@ -26,7 +26,8 @@ $ python3 step1_unpack.py /storage/combustion
 # overwriting the resulting HDF5 file if it already exists.
 $ python3 step1_unpack.py . --overwrite
 
-# Process the raw .tar data files in /storage/combustion/ sequentially.
+# Process the raw .tar data files in /storage/combustion/ serially
+# (not in parallel, which is the default).
 $ python3 step1_unpack.py /storage/combustion --serial
 
 Loading Results
@@ -117,7 +118,7 @@ def _read_tar_and_save_data(tfile, start, stop, parallel=True):
         with h5py.File(save_path, 'a') as hf:
             hf["data"][:,start:stop] = gems_data
             hf["time"][  start:stop] = times
-    print(f"Data saved to {save_path}.")
+    print(f"Data saved to {save_path}.", flush=True)
     if parallel:
         lock.release()  # Let other processes resume.
 
@@ -213,7 +214,7 @@ if __name__ == '__main__':
         python3 {__file__} DATAFOLDER [--overwrite] [--serial]"""
 
     parser.add_argument("datafolder", type=str,
-                        help="the folder containing the raw .tar data files")
+                        help="folder containing the raw GEMS .tar data files")
     parser.add_argument("--overwrite", action="store_true",
                         help="overwrite the existing HDF5 data file")
     parser.add_argument("--serial", action="store_true",
