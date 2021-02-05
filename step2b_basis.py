@@ -120,11 +120,11 @@ def main(trainsize, num_modes):
     # Load the first `trainsize` lifted, scaled snapshot data.
     training_data, _, scales = utils.load_scaled_data(trainsize)
 
-    # Compute and save the (randomized) SVD from the training data.
     if num_modes == -1:
         # Secret mode! Compute all singular values (EXPENSIVE).
         compute_and_save_all_svdvals(training_data)
     else:
+        # Compute and save the (randomized) SVD from the training data.
         compute_and_save_pod_basis(num_modes, training_data, scales)
 
 

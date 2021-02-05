@@ -5,13 +5,10 @@ over the entire computational domain.
 
 Output types
 ------------
-* gems: write full-order GEMS data, converting mass fractions to molar
-    concentrations.
-* rom: write reconstructed ROM outputs, calculating temperature from the
-    results. The specific ROM is selected via command line arguments
-    --trainsize, --modes, and --regularization.
-* error: write the absolute error between the full-order GEMS data and
-    the ROM reconstruction.
+* gems: write full-order GEMS data in the ROM learning variables.
+* rom: write reconstructed ROM outputs. The specific ROM is selected via
+       command line arguments --trainsize, --modes, and --regularization.
+* error: write the absolute error between the GEMS data and the ROM outputs.
 
 Examples
 --------
@@ -70,7 +67,7 @@ DT=({:s})
 NCOLS = 4
 
 
-def main(timeindices, variables=None, snaptype=["gems", "rom", "error"],
+def main(timeindices, variables=None, snaptype=("gems", "rom", "error"),
          trainsize=None, r=None, reg=None):
     """Convert a snapshot in .h5 format to a .dat file that matches the format
     of grid.dat. The new file is saved in `config.tecplot_path()` with the same
@@ -82,7 +79,7 @@ def main(timeindices, variables=None, snaptype=["gems", "rom", "error"],
         Indices (one-based) in the full time domain of the snapshots to save.
 
     variables : str or list(str)
-        The variables to scale, a subset of config.ROM_VARIABLES.
+        Variables to save, a subset of config.ROM_VARIABLES.
         Defaults to all variables.
 
     snaptype : {"rom", "gems", "error"} or list(str)
@@ -91,8 +88,7 @@ def main(timeindices, variables=None, snaptype=["gems", "rom", "error"],
         * "rom": reconstructed snapshots produced by a ROM;
         * "error": absolute error between the full-order data
                    and the reduced-order reconstruction.
-        If "rom" or "error" are selected, the ROM is selected by the
-        remaining arguments.
+        If "rom" or "error" are selected, the remaining arguments are required.
 
     trainsize : int
         Number of snapshots used to train the ROM.
@@ -100,8 +96,8 @@ def main(timeindices, variables=None, snaptype=["gems", "rom", "error"],
     r : int
         Number of retained modes in the ROM.
 
-    reg : float
-        Regularization factor used to train the ROM.
+    reg : two non-negative floats
+        Regularization hyperparameters used to train the ROM.
     """
     utils.reset_logger(trainsize)
 
@@ -110,7 +106,6 @@ def main(timeindices, variables=None, snaptype=["gems", "rom", "error"],
     simtime = timeindices.max()
     t = utils.load_time_domain(simtime+1)
 
-    # Parse the variables.
     if variables is None:
         variables = config.ROM_VARIABLES
     elif isinstance(variables, str):
@@ -217,7 +212,10 @@ def temperature_average(trainsize, r, reg, cutoff=60000):
         Dimension of the ROM.
 
     reg : float
-        Regularization factor used to train the ROM.
+        Regularization hyperparameters used to train the ROM.
+
+    cutoff : int
+        Number of time steps to average over.
     """
     utils.reset_logger(trainsize)
 
@@ -296,26 +294,27 @@ if __name__ == '__main__':
         python3 {__file__} (gems | rom | error)
                                 --timeindex T [...]
                                 --variables V [...]
-                                --trainsize S [...]
-                                --modes R [...]
-                                --regularization REG [...]"""
+                                [--trainsize TRAINSIZE]
+                                [--modes MODES]
+                                [--regularization REG1 REG2]"""
     parser.add_argument("snaptype", type=str, nargs='*',
                         help="which snapshot types to save (gems, rom, error)")
-    parser.add_argument("-idx", "--timeindex", type=int, nargs='*',
+    parser.add_argument("--timeindex", type=int, nargs='*',
                         default=list(range(0,60100,100)),
                         help="indices of snapshots to save "
                              "(default every 100th snapshot)")
-    parser.add_argument("-vars", "--variables", type=str, nargs='*',
+    parser.add_argument("--variables", type=str, nargs='*',
                         default=config.ROM_VARIABLES,
                         help="variables to save, a subset of "
                              "config.ROM_VARIABLES (default all)")
 
     parser.add_argument("--trainsize", type=int, nargs='?',
                         help="number of snapshots in the ROM training data")
-    parser.add_argument("-r", "--modes", type=int, nargs='?',
+    parser.add_argument("--modes", type=int, nargs='?',
                         help="ROM dimension (number of retained POD modes)")
-    parser.add_argument("-reg", "--regularization", type=float, nargs='*',
-                        help="regularization parameter in the ROM training")
+    parser.add_argument("--regularization", type=float, nargs='*',
+                        help="regularization hyperparameters in the "
+                             "ROM training")
 
     parser.add_argument("--temperature-average", action="store_true",
                         help="compute temperature averages of GEMS / ROM")
