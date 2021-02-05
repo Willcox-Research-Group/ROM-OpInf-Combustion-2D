@@ -801,7 +801,5 @@ def extra():
 # =============================================================================
 if __name__ == "__main__":
     utils.reset_logger()
-    # main()
-#     extra()
-    all_poddeim_comparisons(trainsize=20000, r=43, reg=(316,18199),
-                            cutoff=60000, extension="svg")
+    main()
+    extra()
