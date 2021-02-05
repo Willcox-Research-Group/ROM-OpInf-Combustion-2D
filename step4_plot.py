@@ -473,16 +473,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__,
                         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} --help
-        python3 {__file__} --point-traces TRAINSIZE R REG --location M [...]
-        python3 {__file__} --relative-errors TRAINSIZE R REG
-        python3 {__file__} --statistical-features TRAINSIZE R REG"""
+        python3 {__file__} --point-traces TRAINSIZE MODES REG1 REG2
+                           [--location L [...]]
+        python3 {__file__} --relative-errors TRAINSIZE MODES REG1 REG2
+        python3 {__file__} --spatial-statistics TRAINSIZE MODES REG1 REG2"""
 
     # Positional arguments
     parser.add_argument("trainsize", type=int,
                         help="number of snapshots in the training data")
     parser.add_argument("modes", type=int,
                         help="number of POD modes used to project the data"
-                             " (dimension of the learend ROM)")
+                             " (dimension of the learned ROM)")
     parser.add_argument("regularization", type=float, nargs=2,
                         help="regularization hyperparameters used in the "
                              "Operator Inference problem for learning the ROM")
