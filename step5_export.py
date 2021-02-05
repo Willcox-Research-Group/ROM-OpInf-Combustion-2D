@@ -1,17 +1,14 @@
 # step5_export.py
-"""Write Tecplot-friendly ASCII (text) files from simulation data.
+"""Write Tecplot-readable ASCII (text) files from simulation data.
 The resulting files can be used with Tecplot to visualize snapshots
 over the entire computational domain.
 
 Output types
 ------------
-* gems: write full-order GEMS data, converting mass fractions to molar
-    concentrations.
-* rom: write reconstructed ROM outputs, calculating temperature from the
-    results. The specific ROM is selected via command line arguments
-    --trainsize, --modes, and --regularization.
-* error: write the absolute error between the full-order GEMS data and
-    the ROM reconstruction.
+* gems: write full-order GEMS data in the ROM learning variables.
+* rom: write reconstructed ROM outputs. The specific ROM is selected via
+       command line arguments --trainsize, --modes, and --regularization.
+* error: write the absolute error between the GEMS data and the ROM outputs.
 
 Examples
 --------
@@ -51,6 +48,7 @@ import numpy as np
 import config
 import utils
 import data_processing as dproc
+import step4_plot as step4
 
 
 HEADER = """TITLE = "Combustion GEMS 2D Nonintrusive ROM"
@@ -69,7 +67,7 @@ DT=({:s})
 NCOLS = 4
 
 
-def main(timeindices, variables=None, snaptype=["gems", "rom", "error"],
+def main(timeindices, variables=None, snaptype=("gems", "rom", "error"),
          trainsize=None, r=None, reg=None):
     """Convert a snapshot in .h5 format to a .dat file that matches the format
     of grid.dat. The new file is saved in `config.tecplot_path()` with the same
@@ -81,7 +79,7 @@ def main(timeindices, variables=None, snaptype=["gems", "rom", "error"],
         Indices (one-based) in the full time domain of the snapshots to save.
 
     variables : str or list(str)
-        The variables to scale, a subset of config.ROM_VARIABLES.
+        Variables to save, a subset of config.ROM_VARIABLES.
         Defaults to all variables.
 
     snaptype : {"rom", "gems", "error"} or list(str)
@@ -90,8 +88,7 @@ def main(timeindices, variables=None, snaptype=["gems", "rom", "error"],
         * "rom": reconstructed snapshots produced by a ROM;
         * "error": absolute error between the full-order data
                    and the reduced-order reconstruction.
-        If "rom" or "error" are selected, the ROM is selected by the
-        remaining arguments.
+        If "rom" or "error" are selected, the remaining arguments are required.
 
     trainsize : int
         Number of snapshots used to train the ROM.
@@ -99,8 +96,8 @@ def main(timeindices, variables=None, snaptype=["gems", "rom", "error"],
     r : int
         Number of retained modes in the ROM.
 
-    reg : float
-        Regularization factor used to train the ROM.
+    reg : two non-negative floats
+        Regularization hyperparameters used to train the ROM.
     """
     utils.reset_logger(trainsize)
 
@@ -109,7 +106,6 @@ def main(timeindices, variables=None, snaptype=["gems", "rom", "error"],
     simtime = timeindices.max()
     t = utils.load_time_domain(simtime+1)
 
-    # Parse the variables.
     if variables is None:
         variables = config.ROM_VARIABLES
     elif isinstance(variables, str):
@@ -150,34 +146,22 @@ def main(timeindices, variables=None, snaptype=["gems", "rom", "error"],
                                                         for v in variables])
     # Simulate ROM if needed.
     if ("rom" in snaptype) or ("error" in snaptype):
-        # Load the SVD data.
-        V, _ = utils.load_basis(trainsize, r)
-
-        # Load the initial conditions and scales.
-        X_, _, _, scales = utils.load_projected_data(trainsize, r)
-
-        # Load the appropriate ROM.
-        rom = utils.load_rom(trainsize, r, reg)
-
-        # Simulate the ROM over the time domain.
-        with utils.timed_block(f"Simulating ROM with r={r:d}, reg={reg:.0e}"):
-            x_rom = rom.predict(X_[:,0], t, config.U, method="RK45")
-            if np.any(np.isnan(x_rom)) or x_rom.shape[1] < simtime:
-                raise ValueError("ROM unstable!")
+        t, V, scales, q_rom = step4.simulate_rom(trainsize, r, reg,
+                                                 steps=simtime+1)
 
         # Reconstruct the results (only selected variables / snapshots).
         with utils.timed_block("Reconstructing simulation results"):
-            x_rec = dproc.unscale(V[:,:r] @ x_rom[:,timeindices], scales)
-            x_rec = np.concatenate([dproc.getvar(v, x_rec) for v in variables])
+            q_rec = dproc.unscale(V @ q_rom[:,timeindices], scales)
+            q_rec = np.concatenate([dproc.getvar(v, q_rec) for v in variables])
 
     dsets = {}
     if "rom" in snaptype:
-        dsets["rom"] = x_rec
+        dsets["rom"] = q_rec
     if "gems" in snaptype:
         dsets["gems"] = true_snaps
     if "error" in snaptype:
         with utils.timed_block("Computing absolute error of reconstruction"):
-            abs_err = np.abs(true_snaps - x_rec)
+            abs_err = np.abs(true_snaps - q_rec)
         dsets["error"] = abs_err
 
     # Save each of the selected snapshots in Tecplot format matching grid.dat.
@@ -185,7 +169,7 @@ def main(timeindices, variables=None, snaptype=["gems", "rom", "error"],
 
         header = HEADER.format(varnames, tindex, t[tindex],
                                num_nodes, config.DOF,
-                               len(variables)+2, "SINGLE "*len(variables))
+                               len(variables)+2, "DOUBLE "*len(variables))
         for label, dset in dsets.items():
 
             if label == "gems":
@@ -215,6 +199,91 @@ def main(timeindices, variables=None, snaptype=["gems", "rom", "error"],
                         outfile.write(' '.join(connectivity[i:i+NCOLS]) + '\n')
 
 
+def temperature_average(trainsize, r, reg, cutoff=60000):
+    """Get the average-in-time temperature profile for the GEMS data and a
+    specific ROM.
+
+    Parameters
+    ----------
+    trainsize : int
+        Number of snapshots used to train the ROM.
+
+    r : int
+        Dimension of the ROM.
+
+    reg : float
+        Regularization hyperparameters used to train the ROM.
+
+    cutoff : int
+        Number of time steps to average over.
+    """
+    utils.reset_logger(trainsize)
+
+    # Read the grid file.
+    with utils.timed_block("Reading Tecplot grid data"):
+        # Parse the header.
+        grid_path = config.grid_data_path()
+        with open(grid_path, 'r') as infile:
+            grid = infile.read()
+        if int(re.findall(r"Elements=(\d+)", grid)[0]) != config.DOF:
+            raise RuntimeError(f"{grid_path} DOF and config.DOF do not match")
+        num_nodes = int(re.findall(r"Nodes=(\d+)", grid)[0])
+        end_of_header = re.findall(r"DT=.*?\n", grid)[0]
+        headersize = grid.find(end_of_header) + len(end_of_header)
+
+        # Extract geometry information.
+        grid_data = grid[headersize:].split()
+        x = grid_data[:num_nodes]
+        y = grid_data[num_nodes:2*num_nodes]
+        cell_volume = grid_data[2*num_nodes:3*num_nodes]
+        connectivity = grid_data[3*num_nodes:]
+
+    # Compute full-order time-averaged temperature from GEMS data.
+    _s = config.DOF*config.GEMS_VARIABLES.index("T")
+    gems_data, _ = utils.load_gems_data(rows=slice(_s, _s+config.DOF),
+                                        cols=cutoff)
+    with utils.timed_block("Computing time-averaged GEMS temperature"):
+        T_gems = gems_data.mean(axis=1)
+        assert T_gems.shape == (config.DOF,)
+
+    # Simulate ROM and compute the time-averaged temperature.
+    t, V, scales, q_rom = step4.simulate_rom(trainsize, r, reg, steps=cutoff)
+    with utils.timed_block("Reconstructing ROM simulation results"):
+        T_rom = dproc.unscale(dproc.getvar("T",V) @ q_rom, scales, "T")
+        T_rom = T_rom.mean(axis=1)
+        assert T_rom.shape == (config.DOF,)
+
+    header = HEADER.format('"T"', 0, 0, num_nodes, config.DOF,
+                           3, "DOUBLE "*3)
+    header = header.replace("VARLOCATION=([3-3]", "VARLOCATION=([3]")
+    for label, dset in zip(["gems", "rom"], [T_gems, T_rom]):
+        if label == "gems":
+            save_path = os.path.join(config.tecplot_path(), "gems",
+                                     "temperature_average.dat")
+        elif label == "rom":
+            folder = config.rom_snapshot_path(trainsize, r, reg)
+            save_path = os.path.join(folder, "temperature_average.dat")
+        with utils.timed_block(f"Writing {label} temperature average"):
+            with open(save_path, 'w') as outfile:
+                # Write the header.
+                outfile.write(header)
+
+                # Write the geometry data (x,y coordinates).
+                for i in range(0, len(x), NCOLS):
+                    outfile.write(' '.join(x[i:i+NCOLS]) + '\n')
+                for i in range(0, len(y), NCOLS):
+                    outfile.write(' '.join(y[i:i+NCOLS]) + '\n')
+
+                # Write the data for each variable.
+                for i in range(0, dset.shape[0], NCOLS):
+                    row = ' '.join(f"{v:.9E}" for v in dset[i:i+NCOLS])
+                    outfile.write(row + '\n')
+
+                # Write connectivity information.
+                for i in range(0, len(connectivity), NCOLS):
+                    outfile.write(' '.join(connectivity[i:i+NCOLS]) + '\n')
+
+
 # =============================================================================
 if __name__ == '__main__':
     # Set up command line argument parsing.
@@ -225,26 +294,30 @@ if __name__ == '__main__':
         python3 {__file__} (gems | rom | error)
                                 --timeindex T [...]
                                 --variables V [...]
-                                --trainsize S [...]
-                                --modes R [...]
-                                --regularization REG [...]"""
+                                [--trainsize TRAINSIZE]
+                                [--modes MODES]
+                                [--regularization REG1 REG2]"""
     parser.add_argument("snaptype", type=str, nargs='*',
                         help="which snapshot types to save (gems, rom, error)")
-    parser.add_argument("-idx", "--timeindex", type=int, nargs='*',
+    parser.add_argument("--timeindex", type=int, nargs='*',
                         default=list(range(0,60100,100)),
                         help="indices of snapshots to save "
                              "(default every 100th snapshot)")
-    parser.add_argument("-vars", "--variables", type=str, nargs='*',
+    parser.add_argument("--variables", type=str, nargs='*',
                         default=config.ROM_VARIABLES,
                         help="variables to save, a subset of "
                              "config.ROM_VARIABLES (default all)")
 
     parser.add_argument("--trainsize", type=int, nargs='?',
                         help="number of snapshots in the ROM training data")
-    parser.add_argument("-r", "--modes", type=int, nargs='?',
+    parser.add_argument("--modes", type=int, nargs='?',
                         help="ROM dimension (number of retained POD modes)")
-    parser.add_argument("-reg", "--regularization", type=float, nargs='?',
-                        help="regularization parameter in the ROM training")
+    parser.add_argument("--regularization", type=float, nargs='*',
+                        help="regularization hyperparameters in the "
+                             "ROM training")
+
+    parser.add_argument("--temperature-average", action="store_true",
+                        help="compute temperature averages of GEMS / ROM")
 
     # Do the main routine.
     args = parser.parse_args()
@@ -256,5 +329,8 @@ if __name__ == '__main__':
         if args.regularization is None:
             raise TypeError("--regularization required")
 
-    main(args.timeindex, args.variables, args.snaptype,
-         args.trainsize, args.modes, args.regularization)
+    if args.temperature_average:
+        temperature_average(args.trainsize, args.modes, args.regularization)
+    else:
+        main(args.timeindex, args.variables, args.snaptype,
+             args.trainsize, args.modes, args.regularization)
