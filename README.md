@@ -10,6 +10,12 @@
 This repository is an extensive example of the non-intrusive, data-driven Operator Inference procedure for reduced-order modeling applied to a two-dimensional combustion problem.
 It is the source code for [\[1\]](#references) and can be used to reproduce the results of [\[2\]](#references).
 
+This branch has a few extra tools for reproducing the results of [\[1\]](#references):
+- `history.sh`, a list of commands used to get the OpInf ROMs used in the paper and make the figures.
+- `timings.py`, a script timing the OpInf ROM model training and prediction as reported in the paper.
+- `poddeim.py`, tools for extracting POD-DEIM simulation for comparison. Requires some data that is not publically available on globus.
+- `plots.py`, plotting commands for several of the figures in the paper and the Wiki.
+
 [**See the Wiki for details on the problem statement, instructions for using this repository, and visual results.**](https://github.com/Willcox-Research-Group/ROM-OpInf-Combustion-2D/wiki)
 
 <p align="center">
