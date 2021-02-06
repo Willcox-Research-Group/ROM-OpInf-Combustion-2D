@@ -1,7 +1,7 @@
 # step2c_project.py
-"""Project the lifted, scaled snapshot training data to the subspace spanned by
-the columns of the POD basis V, compute velocity information for the projected
-snapshots, and save the projected data.
+"""Project the lifted, scaled snapshot training data to the low-dimensional
+subspace spanned by the columns of the POD basis V, compute time derivative
+information for the projected snapshots, and save the projected data.
 
 Examples
 --------

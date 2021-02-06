@@ -8,8 +8,6 @@ preferably as an absolute path. Other global variables specify the naming
 conventions for the various data files.
 """
 import os
-import re
-import glob
 import logging
 import numpy as np
 import matplotlib.pyplot as plt

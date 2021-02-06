@@ -1,9 +1,7 @@
 # utils.py
 """Utilities for logging, timing, loading, and saving."""
 import os
-import re
 import sys
-import glob
 import h5py
 import time
 import logging

@@ -58,7 +58,7 @@ def test_scalers(lifted_data):
         for i,v in enumerate(config.ROM_VARIABLES):
             s = slice(i*config.DOF, (i+1)*config.DOF)
             if v in ["p", "T", "xi"]:
-                assert scales[i,0] == np.median(lifted_data[s])
+                assert scales[i,0] == np.mean(lifted_data[s])
             else:
                 assert scales[i,0] == 0
             assert np.isclose(np.abs(shifted_data[s]).max(), 1)

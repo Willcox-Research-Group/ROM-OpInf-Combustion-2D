@@ -20,9 +20,9 @@ import chemistry_conversions as chem
 def lift(data):
     """Transform GEMS data to the lifted variables,
 
-        [P, v_x, v_y, T, Y_CH4, Y_O2, Y_H2O, Y_CO2]
+        [p, v_x, v_y, T, Y_CH4, Y_O2, Y_H2O, Y_CO2]
         -->
-        [P, v_x, v_y, T, xi, c_CH4, c_O2, c_H2O, c_CO2].
+        [p, v_x, v_y, T, xi, c_CH4, c_O2, c_H2O, c_CO2].
 
     Parameters
     ----------
@@ -35,26 +35,26 @@ def lift(data):
         Nonscaled, lifted data.
     """
     # Unpack the GEMS data.
-    P, vx, vy, T, Y_CH4, Y_O2, Y_H2O, Y_CO2 = np.split(data,
+    p, vx, vy, T, Y_CH4, Y_O2, Y_H2O, Y_CO2 = np.split(data,
                                                        config.NUM_GEMSVARS)
     masses = [Y_CH4, Y_O2, Y_H2O, Y_CO2]
 
     # Compute specific volume.
-    xi = chem.specific_volume(P, T, masses)
+    xi = chem.specific_volume(p, T, masses)
 
     # Compute molar concentrations.
     molars = chem.mass2molar(masses, xi)
 
     # Put the lifted data together.
-    return np.concatenate([P, vx, vy, T, xi] + molars)
+    return np.concatenate([p, vx, vy, T, xi] + molars)
 
 
 def unlift(data):
     """Transform the learning variables back to the GEMS variables,
 
-        [P, v_x, v_y, T, xi, c_CH4, c_O2, c_H2O, c_CO2]
+        [p, v_x, v_y, T, xi, c_CH4, c_O2, c_H2O, c_CO2]
         -->
-        [P, v_x, v_y, T, Y_CH4, Y_O2, Y_H2O, Y_CO2]
+        [p, v_x, v_y, T, Y_CH4, Y_O2, Y_H2O, Y_CO2]
 
     Parameters
     ----------
@@ -67,7 +67,7 @@ def unlift(data):
         Unscaled, untransformed GEMS data.
     """
     # Unpack the lifted data.
-    P, vx, vy, T, xi, c_CH4, c_O2, c_H2O, c_CO2 = np.split(data,
+    p, vx, vy, T, xi, c_CH4, c_O2, c_H2O, c_CO2 = np.split(data,
                                                            config.NUM_ROMVARS)
     molars = [c_CH4, c_O2, c_H2O, c_CO2]
 
@@ -75,7 +75,7 @@ def unlift(data):
     masses = chem.molar2mass(molars, xi)
 
     # Put the unlifted data together.
-    return np.concatenate([P, vx, vy, T] + masses)
+    return np.concatenate([p, vx, vy, T] + masses)
 
 
 # Variable getting / setting ==================================================
@@ -86,7 +86,7 @@ def _varslice(varname, datasize):
     Parameters
     ----------
     datasize : int
-        The number of rows (2D) or entries (1D) of data, e.g., data.shape[0].
+        Number of rows (2D) or entries (1D) of data, e.g., data.shape[0].
         Must be a multiple of config.NUM_ROMVARS.
     
     varname : str
@@ -124,7 +124,7 @@ def scale(data, scales=None, variables=None):
     Parameters
     ----------
     data : (num_variables*DOF, num_snapshots) ndarray
-        The dataset to be scaled.
+        Dataset to be scaled.
 
     scales : (NUM_ROMVARS, 2) ndarray or None
         Shifting and scaling factors. If None, learn the factors from the data:
@@ -140,10 +140,10 @@ def scale(data, scales=None, variables=None):
     Returns
     -------
     scaled_data : (num_variables*DOF, num_snapshots)
-        The scaled data.
+        Scaled data.
 
     scales : (NUM_ROMVARS, 2) ndarray
-        The shifting and scaling factors used.
+        Shifting and dilation factors used to scale the data.
     """
     # Determine whether learning the scaling transformation is needed.
     learning = (scales is None)
@@ -225,7 +225,7 @@ def unscale(data, scales, variables=None):
     Parameters
     ----------
     data : (num_variables*dof, num_snapshots) ndarray
-        The dataset to be unscaled.
+        Dataset to be unscaled.
 
     scales : (NUM_ROMVARS, 2) ndarray
         Shifting and scaling factors. UNscaling is given by
@@ -238,7 +238,7 @@ def unscale(data, scales, variables=None):
     Returns
     -------
     unscaled_data : (num_variables*dof, num_snapshots)
-        The unscaled data.
+        Unscaled data.
     """
     # Validate the scales.
     _shape = (config.NUM_ROMVARS, 2)
