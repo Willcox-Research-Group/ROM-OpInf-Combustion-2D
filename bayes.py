@@ -9,7 +9,14 @@ import rom_operator_inference as roi
 
 import config
 import utils
+import step3_train as step3
+import step4_plot as step4
 import data_processing as dproc
+
+
+LABELSIZE=18
+TITLESIZE=16
+TICKSIZE=14
 
 
 # Operator Inference posterior samplers =======================================
@@ -154,17 +161,22 @@ def construct_posterior(trainsize, r, reg, case=2):
         How to treat the regularization update.
         * 2: learn a new λ for each ROW of the operator matrix.
         * 1: learn a new λ for each ENTRY of the operator matrix.
+        * -1: do not update λ, just return `post`.
 
     Returns
     -------
     post : OpInfPosterior
         Posterior distribution object with rvs() sampling method.
-    
+
     reg_new : (r,) ndarray or (r,d) ndarray
         The Bayesian update for the regularization parameters.
         * case == 2 -> (r,), a new λ for each ROW of the operator matrix.
         * case == 1 -> (r,d), a new λ for each ENTRY of the operator matrix.
     """
+    d = 1 + r + r*(r+1)//2 + 1
+    if isinstance(reg, tuple) and len(reg) == 2:
+        reg = step3.regularizer(r, d, reg[0], reg[1])
+
     # Get the data matrix and solve the Operator Inference problem,
     # using the initial guess for the regularization parameter(s).
     Q_, R, t, = utils.load_projected_data(trainsize, r)
@@ -175,7 +187,6 @@ def construct_posterior(trainsize, r, reg, case=2):
     O = rom.O_
 
     # Check matrix shapes.
-    d = 1 + r + r*(r+1)//2 + 1
     assert D.shape == (trainsize, d)
     assert R.shape == (r, trainsize)
     assert O.shape == (r, d)
@@ -193,11 +204,11 @@ def construct_posterior(trainsize, r, reg, case=2):
         Onorm2s = np.sum(O**2, axis=1)                  # ||o_i||^2.
         residual2s = np.sum((D @ O.T - R.T)**2, axis=0) # ||Do_i - r_i||^2.
 
-#         print("||o_i||^2:", Onorm2s)
-#         print(f"{Onorm2s.mean()} ± {Onorm2s.std()}")
-#         print("||Do_i - r_i||^2:", residual2s)
-#         print(f"{residual2s.mean()} ± {residual2s.std()}")
-#         input("Press ENTER to continue")
+        # print("||o_i||^2:", Onorm2s)
+        # print(f"{Onorm2s.mean()} ± {Onorm2s.std()}")
+        # print("||Do_i - r_i||^2:", residual2s)
+        # print(f"{residual2s.mean()} ± {residual2s.std()}")
+        # input("Press ENTER to continue")
 
         # Calculate posterior ROM distribution.
         if np.isscalar(reg):
@@ -209,13 +220,18 @@ def construct_posterior(trainsize, r, reg, case=2):
             if case == 1:
                 Σs = np.array([σ2i * Σ for σ2i in σ2s]) # = post.covariances
         else:
+            if reg.shape == (d,):
+                # TODO: this is Gamma_{i} = Gamma_{fixed},
+                # which would mean DTD + Gamma_{i} is the same each time,
+                # so we could speed this part up quite a bit.
+                reg = np.tile(reg, (r,1))
             λ2 = np.array(reg)**2
             if λ2.shape == (r,):
                 I = np.eye(d)
                 Λs = [λ2i*I for λ2i in λ2]
                 σ2s = (residual2s + λ2*Onorm2s) / trainsize
             elif λ2.shape == (r,d):
-                if case != 1:
+                if case not in (-1, 1):
                     raise ValueError("2D reg only compatible with case=1")
                 Λs = [np.diag(λ2i) for λ2i in λ2]
                 σ2s = (residual2s + np.sum(λ2*O**2, axis=1)) / trainsize
@@ -225,7 +241,10 @@ def construct_posterior(trainsize, r, reg, case=2):
             Σs = np.array([σ2i * symmetrize(la.inv(DTD + Λi), sparsify=True)
                                                 for σ2i, Λi in zip(σ2s, Λs)])
             post = None
-            # post = OpInfPosterior(O, Σs, modelform="cAHB")
+            post = OpInfPosterior(O, Σs, modelform="cAHB")
+
+    if case == -1:
+        return post
 
     with utils.timed_block("Calculating updated regularization parameters"):
         if case == 2:  # So λ2 is a scalar or (r,) ndarray
@@ -265,6 +284,7 @@ def construct_posterior(trainsize, r, reg, case=2):
 
     return post, np.sqrt(λ2_new)
 
+
 # -----------------------------------------------------------------------------
 def simulate_posterior(trainsize, post, ndraws=10, steps=None):
     """
@@ -297,15 +317,19 @@ def simulate_posterior(trainsize, post, ndraws=10, steps=None):
     with utils.timed_block(f"Simulating mean ROM"):
         q_rom_mean = post.mean_rom.predict(q0, t, config.U, method="RK45")
 
-    # Get ndraws simulation samples.
+    # Get `ndraws` simulation samples.
     q_roms = []
-    i = 0
+    i, failures = 0, 0
     while i < ndraws:
-        with utils.timed_block(f"Simulating posterior draw ROM {i+1}"):
+        with utils.timed_block(f"Simulating posterior draw ROM {i+1:03d}"):
             q_rom = post.predict(q0, t)
             if q_rom.shape[1] == t.shape[0]:
                 q_roms.append(q_rom)
                 i += 1
+            else:
+                failures += 1
+    if failures:
+        print(f"TOTAL FAILURES: {failures}")
 
     return q_rom_mean, q_roms
 
@@ -318,24 +342,32 @@ def plot_mode_uncertainty(trainsize, mean, draws, modes=8):
 
     if len(draws) > 0:
         with utils.timed_block("Calculating sample deviations"):
-            offsets = [draw - mean for draw in draws]
-            deviations = np.std(offsets, axis=0)
+            deviations = np.std(draws, axis=0)
 
-    nrows = (modes//2) + 1 if modes % 2 else modes//2
-    fig, axes = plt.subplots(nrows, 2)
+    fig, axes = plt.subplots(modes, 1, figsize=(8,9))
     for i, ax in zip(range(modes), axes.flat):
-        ax.plot(t, mean[i,:], 'C0-', lw=1)
+        ax.plot(t, mean[i,:], 'C0-', lw=1, label=r"$\mu$")
         # for draw in draws:
         #     ax.plot(t, draw[i,:], 'C0-', lw=.5, alpha=.2)
         if len(draws) > 0:
             ax.fill_between(t, mean[i,:] - 3*deviations[i,:],
-                               mean[i,:] + 3*deviations[i,:], alpha=.5)
+                               mean[i,:] + 3*deviations[i,:],
+                            alpha=.5, label=r"$\mu \pm 3\sigma$")
         if steps > trainsize:
             ax.axvline(t[trainsize], color='k', lw=1)
-        # ax.set_title(fr"POD mode ${i+1}$")
+        ax.set_ylabel(fr"$q_{{{i+1}}}(t)$", fontsize=LABELSIZE)
         ax.set_xlim(t[0], t[-1])
-        ax.set_xticks(np.arange(t[0], t[-1]+.001, .002))
-    fig.tight_layout()
+        ax.set_xticks(np.arange(t[0], t[-1]+.001, .001))
+        ax.tick_params(axis="both", which="major", labelsize=TICKSIZE)
+
+    # Single legend below the subplots.
+    fig.tight_layout(rect=[0, .05, 1, 1])
+    fig.subplots_adjust(hspace=.2)
+    leg = axes[0].legend(loc="lower center", fontsize=LABELSIZE, ncol=2,
+                         bbox_to_anchor=(.5,0),
+                         bbox_transform=fig.transFigure)
+    for line in leg.get_lines():
+        line.set_linewidth(2)
 
 
 def plot_pointtrace_uncertainty(trainsize, mean, draws, var="p"):
@@ -353,7 +385,6 @@ def plot_pointtrace_uncertainty(trainsize, mean, draws, var="p"):
     # Get the indicies for each variable.
     elems = np.atleast_1d(config.MONITOR_LOCATIONS)
     nelems = elems.size
-    nrows = (nelems // 2) + (1 if nelems % 2 != 0 else 0)
     elems = elems + config.ROM_VARIABLES.index(var)*config.DOF
 
     # Load the true pressure traces and the time domain.
@@ -373,46 +404,118 @@ def plot_pointtrace_uncertainty(trainsize, mean, draws, var="p"):
                             for draw in draws]
 
     with utils.timed_block("Calculating sample deviations"):
-        offsets = [draw - traces_rom_mean for draw in traces_rom_draws]
-        deviations = np.std(offsets, axis=0)
+        deviations = np.std(traces_rom_draws, axis=0)
 
-    fig, axes = plt.subplots(nrows, 2, figsize=(9,6), sharex=True)
+    fig, axes = plt.subplots(nelems, 1, figsize=(9,9), sharex=True)
     for i, ax in enumerate(axes.flat):
         ax.plot(t, traces_gems[i,:], lw=1, **config.GEMS_STYLE)
-        ax.plot(t, traces_rom_mean[i,:], 'C0-', lw=1,
-                label=r"ROM ($\mu$)")
+        ax.plot(t, traces_rom_mean[i,:], 'C0--', lw=1,
+                label=r"OpInf ROM ($\mu$)")
         # for draw in traces_rom_draws:
         #     ax.plot(t, draw[i,:], 'C0-', lw=.5, alpha=.25)
         ax.fill_between(t, traces_rom_mean[i,:] - 3*deviations[i,:],
-                           traces_rom_mean[i,:] + 3*deviations[i,:], alpha=.5)
+                           traces_rom_mean[i,:] + 3*deviations[i,:],
+                        alpha=.5, label=r"OpInf ROM ($\mu \pm 3\sigma$)")
         ax.axvline(t[trainsize], color='k', lw=1)
         ax.set_xlim(t[0], t[-1])
-        ax.set_xticks(np.arange(t[0], t[-1]+.001, .002))
-        ax.set_title(f"Location ${i+1}$", fontsize=12)
+        ax.set_xticks(np.arange(t[0], t[-1]+.001, .001))
+        ax.tick_params(axis="both", which="major", labelsize=TICKSIZE)
+        ax.set_title(f"Location ${i+1}$", fontsize=TITLESIZE)
         ax.locator_params(axis='y', nbins=2)
-    for ax in axes[-1,:]:
-        ax.set_xlabel("Time [s]", fontsize=12)
-    for ax in axes[:,0]:
-        ax.set_ylabel(config.VARLABELS[var], fontsize=12)
 
-    # Single legend to the right of the subplots.
-    fig.tight_layout(rect=[0, 0, .85, 1])
-    leg = axes[0,0].legend(loc="center right", fontsize=14,
-                           bbox_to_anchor=(1,.5),
-                           bbox_transform=fig.transFigure)
+    # Time label below lowest axis.
+    axes[-1].set_xlabel("Time [s]", fontsize=LABELSIZE)
+
+    # Single variable label on the left.
+    ax_invis = fig.add_subplot(1, 1, 1, frameon=False)
+    ax_invis.tick_params(labelcolor="none", bottom=False, left=False)
+    ax_invis.set_ylabel(config.VARLABELS[var], labelpad=20, fontsize=LABELSIZE)
+
+    # Single legend below the subplots.
+    fig.tight_layout(rect=[0, .05, 1, 1])
+    fig.subplots_adjust(hspace=.2)
+    leg = axes[0].legend(loc="lower center", fontsize=LABELSIZE, ncol=3,
+                         bbox_to_anchor=(.525,0),
+                         bbox_transform=fig.transFigure)
+    for line in leg.get_lines():
+        line.set_linewidth(2)
+
+
+def plot_speciesintegral_uncertainty(trainsize, mean, draws):
+    """
+
+    Parameters
+    ----------
+    trainsize : int
+
+    mean : (r,k) ndarray
+
+    draws : (s,r,k) ndarray?
+
+    Returns
+    -------
+    """
+    # Load the true spatial statistics and the time domain.
+    steps = mean.shape[1]
+    keys = ["CH4_sum", "O2_sum", "H2O_sum", "CO2_sum"]
+    integrals_gems, t = utils.load_spatial_statistics(keys, steps)
+
+    # Load the basis.
+    V, scales = utils.load_basis(trainsize, mean.shape[0])
+
+    fig, axes = plt.subplots(len(keys), 1, figsize=(9,9), sharex=True)
+    for key, ax in zip(keys, axes.flat):
+        var, action = key.split('_')
+        with utils.timed_block(f"Reconstructing {key}"):
+            integral_rom_mean = step4.get_feature(key, mean, V, scales)
+            integrals_rom_draws = [step4.get_feature(key, draw, V, scales)
+                                   for draw in draws]
+            deviation = np.std(integrals_rom_draws, axis=0)
+        ax.plot(t, integrals_gems[key], lw=1, **config.GEMS_STYLE)
+        ax.plot(t, integral_rom_mean, 'C0--', lw=1, label=r"OpInf ROM ($\mu$)")
+        # for draw in integral_rom_draws:
+        #     ax.plot(t, draw[i,:], 'C0-', lw=.5, alpha=.25)
+        ax.fill_between(t, integral_rom_mean - 3*deviation,
+                           integral_rom_mean + 3*deviation,
+                        alpha=.5, label=r"OpInf ROM ($\mu \pm 3\sigma$)")
+        ax.axvline(t[trainsize], color='k', lw=1)
+        ax.set_xlim(t[0], t[-1])
+        ax.set_xticks(np.arange(t[0], t[-1]+.001, .001))
+        ax.set_title(config.VARTITLES[var], fontsize=TITLESIZE)
+        ax.tick_params(axis="both", which="major", labelsize=TICKSIZE)
+        ax.locator_params(axis='y', nbins=2)
+
+    # Time label below lowest axis.
+    axes[-1].set_xlabel("Time [s]", fontsize=LABELSIZE)
+
+    # Single variable label on the left.
+    ax_invis = fig.add_subplot(111, frameon=False)
+    ax_invis.tick_params(labelcolor="none", bottom=False, left=False)
+    ax_invis.set_ylabel(f"Specied Concentration Integrals "
+                        f"[{config.VARUNITS[var]}]",
+                        labelpad=20, fontsize=LABELSIZE)
+
+    # Single legend below the subplots.
+    fig.tight_layout(rect=[0, .05, 1, 1])
+    fig.subplots_adjust(hspace=.225)
+    leg = axes[0].legend(loc="lower center", fontsize=LABELSIZE, ncol=3,
+                         bbox_to_anchor=(.525,0),
+                         bbox_transform=fig.transFigure)
     for line in leg.get_lines():
         line.set_linewidth(2)
 
 
 def main(trainsize, r, reg, ndraws=10, steps=50000, modes=4):
-    post = construct_posterior(trainsize, r, reg, case=2)[0]
+    post = construct_posterior(trainsize, r, reg, case=-1)
     mean, draws = simulate_posterior(trainsize, post, ndraws, steps)
     plot_mode_uncertainty(trainsize, mean, draws, modes)
-    utils.save_figure("bayes/bayes_first4modes.pdf")
+    utils.save_figure(f"bayes/bayes_first{modes}modes.pdf")
     plot_pointtrace_uncertainty(trainsize, mean, draws, var="p")
     utils.save_figure("bayes/bayes_traces_pressure.pdf")
-    plot_pointtrace_uncertainty(trainsize, mean, draws, var="T")
-    utils.save_figure("bayes/bayes_traces_temperature.pdf")
+    plot_pointtrace_uncertainty(trainsize, mean, draws, var="vx")
+    utils.save_figure("bayes/bayes_traces_xvelocity.pdf")
+    # plot_speciesintegral_uncertainty(trainsize, mean, draws)
+    # utils.save_figure("bayes/bayes_species_integrals.pdf")
 
 
 def iterate(trainsize, r, reg, niter, case=2):
@@ -445,7 +548,8 @@ def iterate(trainsize, r, reg, niter, case=2):
     utils.save_figure(f"bayes/iter{case}_first4modes.pdf")
 
 
-
+# =============================================================================
 if __name__ == "__main__":
-    main(20000, 40, 36382, 100, 50000, 4)
-#     iterate(20000, 40, 36382, 15, case=2)
+    main(20000, 36, (155,11777), 100, 40000, 4)
+    # main(20000, 43, (316,18199), 100, 40000, 4)
+    # iterate(20000, 40, 36382, 15, case=2)
