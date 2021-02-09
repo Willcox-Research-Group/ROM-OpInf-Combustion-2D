@@ -1,6 +1,7 @@
 # bayes.py
 """Bayesian interpretation of Operator Inference for this problem."""
 
+import logging
 import numpy as np
 import scipy.linalg as la
 import matplotlib.pyplot as plt
@@ -329,7 +330,7 @@ def simulate_posterior(trainsize, post, ndraws=10, steps=None):
             else:
                 failures += 1
     if failures:
-        print(f"TOTAL FAILURES: {failures}")
+        logging.info(f"TOTAL FAILURES: {failures}")
 
     return q_rom_mean, q_roms
 
@@ -506,6 +507,7 @@ def plot_speciesintegral_uncertainty(trainsize, mean, draws):
 
 
 def main(trainsize, r, reg, ndraws=10, steps=50000, modes=4):
+    utils.reset_logger(trainsize)
     post = construct_posterior(trainsize, r, reg, case=-1)
     mean, draws = simulate_posterior(trainsize, post, ndraws, steps)
     plot_mode_uncertainty(trainsize, mean, draws, modes)
@@ -520,6 +522,7 @@ def main(trainsize, r, reg, ndraws=10, steps=50000, modes=4):
 
 def iterate(trainsize, r, reg, niter, case=2):
     """Do the iteration several times, plotting the evolution thereof."""
+    utils.reset_logger(trainsize)
     print(f"Initialization: reg = {reg}")
     means = np.empty(niter+1, dtype=float)
     stds = means.copy()
