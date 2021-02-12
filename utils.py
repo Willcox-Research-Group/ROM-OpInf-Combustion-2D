@@ -12,8 +12,11 @@ try:
     import rom_operator_inference as roi
 except ModuleNotFoundError:
     print("\nrom_operator_inference module not installed",
-          "(python3 -m pip install --user rom-operator-inference)\n")
+          "(python3 -m pip install --user -r requirements.txt)\n")
     raise
+if roi.__version__ != "1.2.1":
+    raise ModuleNotFoundError("rom-operator-inference version 1.2.1 required "
+                         "(python3 -m pip install --user -r requirements.txt)")
 
 import config
 
