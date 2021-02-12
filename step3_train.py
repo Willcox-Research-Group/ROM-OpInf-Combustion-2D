@@ -194,8 +194,7 @@ def train_single(trainsize, r, regs):
     with utils.timed_block(f"Training ROM with k={trainsize:d}, "
                            f"r={r:d}, λ1={λ1:.0f}, λ2={λ2:.0f}"):
         rom = roi.InferredContinuousROM(config.MODELFORM)
-        rom.fit(None, Q_, Qdot_, U, P=regularizer(r, d, λ1, λ2),
-                compute_extras=False, check_regularizer=False)
+        rom.fit(None, Q_, Qdot_, U, P=regularizer(r, d, λ1, λ2))
         save_trained_rom(trainsize, r, regs, rom)
 
 
@@ -249,8 +248,7 @@ def train_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     print(f"TRAINING {λ1grid.size*λ2grid.size} ROMS")
     with utils.timed_block(f"Constructing least-squares solver, r={r:d}"):
         rom = roi.InferredContinuousROM(config.MODELFORM)
-        rom._construct_solver(None, Q_, Qdot_, U, np.ones(d),
-                              compute_extras=False, check_regularizer=False)
+        rom._construct_solver(None, Q_, Qdot_, U, np.ones(d))
 
     # Test each regularization parameter.
     errors_pass = {}
@@ -333,8 +331,7 @@ def train_minimize(trainsize, r, regs, testsize=None, margin=1.5):
     # Create a solver mapping regularization parameters to operators.
     with utils.timed_block(f"Constructing least-squares solver, r={r:d}"):
         rom = roi.InferredContinuousROM(config.MODELFORM)
-        rom._construct_solver(None, Q_, Qdot_, U, np.ones(d),
-                              compute_extras=False, check_regularizer=False)
+        rom._construct_solver(None, Q_, Qdot_, U, np.ones(d))
 
     # Test each regularization parameter.
     def training_error(log10regs):
@@ -419,7 +416,7 @@ def _train_minimize_1D(trainsize, r, regs, testsize=None, margin=1.5):
     # Create a solver mapping regularization parameters to operators.
     with utils.timed_block(f"Constructing least-squares solver, r={r:d}"):
         rom = roi.InferredContinuousROM(config.MODELFORM)
-        rom._construct_solver(None, Q_, Qdot_, U, 1, compute_extras=False)
+        rom._construct_solver(None, Q_, Qdot_, U, 1)
 
     # Test each regularization parameter.
     def training_error(log10reg):

@@ -8,7 +8,7 @@
 # Reduced-order Modeling via Operator Inference for 2D Combustion
 
 This repository is an extensive example of the non-intrusive, data-driven Operator Inference procedure for reduced-order modeling applied to a two-dimensional combustion problem.
-It is the source code for [\[1\]](#references) and can be used to reproduce the results of [\[2\]](#references).
+It is the source code for [\[1\]](#references) (see the [jrsnz2021](https://github.com/Willcox-Research-Group/ROM-OpInf-Combustion-2D/tree/jrsnz2021) branch) and can be used to reproduce the results of [\[2\]](#references).
 
 This branch has a few extra tools for reproducing the results of [\[1\]](#references):
 - `history.sh`, a list of commands used to get the OpInf ROMs used in the paper and make the figures.
