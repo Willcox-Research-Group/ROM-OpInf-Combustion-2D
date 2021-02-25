@@ -331,8 +331,9 @@ def basis(trainsize, r, variables=None):
     for j in range(r):
         header = HEADER.format(varnames, j, j, num_nodes, config.DOF,
                                len(variables)+2, "DOUBLE "*len(variables))
-        save_folder = config._makefolder(config.tecplot_path(), "basis")
-        save_path = os.path.join(save_folder, config.TRNFMT(trainsize) + ".dat")
+        save_folder = config._makefolder(config.tecplot_path(),
+                                         "basis", config.TRNFMT(trainsize))
+        save_path = os.path.join(save_folder, f"vec_{j+1:03d}.dat")
         with utils.timed_block(f"Writing basis vector {j+1:d}"):
             with open(save_path, 'w') as outfile:
                 # Write the header.
@@ -352,7 +353,7 @@ def basis(trainsize, r, variables=None):
                 # Write connectivity information.
                 for i in range(0, len(connectivity), NCOLS):
                     outfile.write(' '.join(connectivity[i:i+NCOLS]) + '\n')
-    print(f"Basis info exported to {save_folder}/k*.dat.")
+    print(f"Basis info exported to {save_folder}/*.dat.")
 
 
 # =============================================================================
