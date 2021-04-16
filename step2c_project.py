@@ -102,10 +102,10 @@ def main(trainsize):
     utils.reset_logger(trainsize)
 
     # Load lifted, scaled snapshot data.
-    scaled_data, time_domain, _ = utils.load_scaled_data(trainsize)
+    scaled_data, time_domain, _, _ = utils.load_scaled_data(trainsize)
 
     # Load the POD basis.
-    V, scales = utils.load_basis(trainsize, None, None)
+    V, _, _ = utils.load_basis(trainsize, None)
 
     # Project and save the data.
     return project_and_save_data(scaled_data, time_domain, V)

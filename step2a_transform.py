@@ -22,6 +22,7 @@ Command Line Arguments
 import h5py
 import logging
 import numpy as np
+import scipy.spatial as sp
 
 import config
 import utils
@@ -54,7 +55,58 @@ def load_and_lift_gems_data(trainsize):
     return lifted_data, time_domain
 
 
-def scale_and_save_data(trainsize, lifted_data, time_domain):
+def weights_time_decay(time_domain, sigma=2):
+    """Construct weights based on the time (smaller time, greater weight):
+
+    w_j = σ^(t_j / t_{k-1}),  j = 0, 1, ..., k - 1 = trainsize - 1.
+
+    Parameters
+    ----------
+    time_domain : (trainsize,) ndarray
+        Time domain corresponding to the training snapshots.
+
+    sigma : float > 1
+        Base of exponential.
+
+    Returns
+    -------
+    w : (trainsize,) ndarray
+        Snapshot weights.
+    """
+    t = time_domain - time_domain[0]
+    return sigma**(-t/t[-1])
+
+
+def weights_gaussian(training_data, sigma=1, r=None):
+    """Construct weights based on the Gaussian kernel (spatial importance):
+
+    K(xi, xj) = exp(-||xi - xj||^2 / 2σ^2)
+
+    Parameters
+    ----------
+    training_data : (n,k) ndarray
+        Training snapshots, pre-processed except for mean shifting.
+
+    sigma : float > 0
+        Gaussian kernel spread hyperparameter.
+
+    r : int > 0 or None
+        Dimension of random projection to approximate distances.
+    """
+    # If r is given, randomly project the data to r dimensions.
+    if r is not None:
+        M = np.random.standard_normal(training_data.shape[0], r)
+        X = (M.T @ training_data).T
+    else:
+        X = training_data.T
+
+    # Calculate the kernel matrix and the resulting weights.
+    distances = sp.distance.pdist(training_data.T, "sqeuclidean")
+    K = sp.distance.squareform(np.exp(-distances/(2*sigma**2)))
+    return np.mean(K, axis=1)
+
+
+def scale_and_save_data(trainsize, lifted_data, time_domain, weights=None):
     """Scale lifted snapshots (by variable) and save the scaled snapshots.
 
     Parameters
@@ -67,21 +119,52 @@ def scale_and_save_data(trainsize, lifted_data, time_domain):
 
     time_domain : (k>trainsize,) ndarray
         The time domain corresponding to the lifted snapshots.
+
+    weights : (trainsize,) ndarray or None
+        If given, weight the mean shift and the resulting snapshots.
+
+    Returns
+    -------
+    training_data : (NUM_ROMVARS*DOF, trainsize) ndarray
+        Scaled, shifted snapshots to use as training data for the basis.
+
+    qbar : (NUM_ROMVARS*DOF,) ndarray
+        Mean snapshot of the scaled training data.
+
+    scales : (NUM_ROMVARS,2) ndarray
+        Info on how the snapshot data was scaled.
     """
     # Scale the learning variables to the bounds in config.SCALE_TO.
     with utils.timed_block(f"Scaling {trainsize:d} lifted snapshots"):
-        scaled_data, scales = dproc.scale(lifted_data[:,:trainsize].copy())
+        training_data, scales = dproc.scale(lifted_data[:,:trainsize].copy())
+
+    # Shift the scaled data by the mean snapshot.
+    with utils.timed_block(f"Shifting {trainsize:d} scaled snapshots by mean"):
+        if weights is None:
+            qbar = np.mean(training_data, axis=1)           # Standard mean
+            training_data -= qbar.reshape((-1,1))           # Shift by mean
+        else:
+            if isinstance(weights, str):
+                if weights == "temporal":
+                    weights = weights_time_decay(time_domain[:trainsize])
+                elif weights == "Gaussian":
+                    weights = weights_gaussian(training_data)
+            weights /= np.sum(weights)                      # Normalize weights
+            qbar = np.mean(training_data * weights, axis=1) # Weighted mean
+            training_data -= qbar.reshape((-1,1))           # Shift by mean
+            training_data *= weights                        # Weight snapshots
 
     # Save the lifted, scaled training data.
     save_path = config.scaled_data_path(trainsize)
     with utils.timed_block("Saving scaled, lifted training data"):
         with h5py.File(save_path, 'w') as hf:
-            hf.create_dataset("data", data=scaled_data)
+            hf.create_dataset("data", data=training_data)
             hf.create_dataset("time", data=time_domain[:trainsize])
+            hf.create_dataset("mean", data=qbar)
             hf.create_dataset("scales", data=scales)
-    logging.info(f"Scaled data saved as {save_path}.\n")
+    logging.info(f"Processed data saved to {save_path}.\n")
 
-    return scaled_data, scales
+    return training_data, qbar, scales
 
 
 def main(trainsizes):
