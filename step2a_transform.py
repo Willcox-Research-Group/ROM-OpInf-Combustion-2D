@@ -77,7 +77,7 @@ def weights_time_decay(time_domain, sigma=2):
     return sigma**(-t/t[-1])
 
 
-def weights_gaussian(training_data, sigma=1, r=None):
+def weights_gaussian(training_data, sigma=1, k=None, kernelize=True):
     """Construct weights based on the Gaussian kernel (spatial importance):
 
     K(xi, xj) = exp(-||xi - xj||^2 / 2σ^2)
@@ -90,19 +90,26 @@ def weights_gaussian(training_data, sigma=1, r=None):
     sigma : float > 0
         Gaussian kernel spread hyperparameter.
 
-    r : int > 0 or None
+    k : int > 0 or None
         Dimension of random projection to approximate distances.
+
+    kernelize : bool
+        If True, apply the Gaussian kernel. If False, use squared Euclidean
+        distances (no kernel).
     """
-    # If r is given, randomly project the data to r dimensions.
-    if r is not None:
-        M = np.random.standard_normal(training_data.shape[0], r)
+    # If k is given, randomly project the data to r dimensions.
+    if k is not None:
+        M = np.random.standard_normal((training_data.shape[0], k))
         X = (M.T @ training_data).T
     else:
         X = training_data.T
+        k = 1
 
     # Calculate the kernel matrix and the resulting weights.
-    distances = sp.distance.pdist(training_data.T, "sqeuclidean")
-    K = sp.distance.squareform(np.exp(-distances/(2*sigma**2)))
+    distances = sp.distance.pdist(X, "sqeuclidean") / k
+    if kernelize:
+        distances = np.exp(-distances/(2*sigma**2))
+    K = sp.distance.squareform(distances)
     return np.mean(K, axis=1)
 
 
