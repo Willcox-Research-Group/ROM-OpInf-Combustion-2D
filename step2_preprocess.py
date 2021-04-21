@@ -42,7 +42,7 @@ import step2b_basis as step2b
 import step2c_project as step2c
 
 
-def main(trainsize, num_modes, weights=None):
+def main(trainsize, num_modes):
     """Lift and scale the GEMS simulation data; compute a POD basis of the
     lifted, scaled snapshot training data; project the lifted, scaled snapshot
     training data to the subspace spanned by the columns of the POD basis V,
@@ -59,23 +59,20 @@ def main(trainsize, num_modes, weights=None):
         The number of POD modes (left singular vectors) to use in the
         projection. This is the upper bound for the size of ROMs that
         can be trained with this data set.
-
-    weights : (trainsize,) ndarray or None
-        If given, weights for each snapshot in the POD basis computation.
     """
     utils.reset_logger(trainsize)
 
     # STEP 2A: Lift and scale the data ----------------------------------------
     try:
         # Attempt to load existing lifted, scaled data.
-        training_data, t, qbar, scales = utils.load_scaled_data(trainsize)
+        training_data, time, qbar, scales = utils.load_scaled_data(trainsize)
 
     except utils.DataNotFoundError:
         # Lift the GEMS data, then scale the lifted snapshots by variable.
-        lifted_data, t = step2a.load_and_lift_gems_data(trainsize)
+        lifted_data, time = step2a.load_and_lift_gems_data(trainsize)
         training_data, qbar, scales = step2a.scale_and_save_data(trainsize,
-                                                               lifted_data,
-                                                               t, weights)
+                                                                 lifted_data,
+                                                                 time)
         del lifted_data
 
     # STEP 2B: Get the POD basis from the lifted, scaled data -----------------
@@ -92,7 +89,7 @@ def main(trainsize, num_modes, weights=None):
                                                   training_data, scales)
 
     # STEP 2C: Project data to the appropriate subspace -----------------------
-    return step2c.project_and_save_data(training_data, t, basis)
+    return step2c.project_and_save_data(training_data, time, basis)
 
 
 # =============================================================================
