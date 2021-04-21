@@ -85,8 +85,8 @@ def scale_and_save_data(trainsize, lifted_data, time_domain):
 
     # Shift the scaled data by the mean snapshot.
     with utils.timed_block(f"Shifting {trainsize:d} scaled snapshots by mean"):
-        qbar = np.mean(training_data, axis=1)           # Standard mean
-        training_data -= qbar.reshape((-1,1))           # Shift by mean
+        qbar = np.mean(training_data, axis=1)       # Compute mean snapshot.
+        training_data -= qbar.reshape((-1,1))       # Shift columns by mean.
 
     # Save the lifted, scaled training data.
     save_path = config.scaled_data_path(trainsize)
