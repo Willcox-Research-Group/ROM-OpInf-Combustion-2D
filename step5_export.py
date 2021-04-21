@@ -284,6 +284,81 @@ def temperature_average(trainsize, r, reg, cutoff=60000):
                     outfile.write(' '.join(connectivity[i:i+NCOLS]) + '\n')
 
 
+def basis(trainsize, r, variables=None):
+    """Export the POD basis vectors to Tecplot format.
+
+    Parameters
+    ----------
+    trainsize : int
+        Number of snapshots used to compute the basis.
+
+    r : int
+        Number of basis vectors to save.
+
+    variables : str or list(str)
+        Variables to save, a subset of config.ROM_VARIABLES.
+        Defaults to all variables.
+    """
+    utils.reset_logger(trainsize)
+
+    if variables is None:
+        variables = config.ROM_VARIABLES
+    elif isinstance(variables, str):
+        variables = [variables]
+    varnames = '\n'.join(f'"{v}"' for v in variables)
+
+    # Read the grid file.
+    with utils.timed_block("Reading Tecplot grid data"):
+        # Parse the header.
+        grid_path = config.grid_data_path()
+        with open(grid_path, 'r') as infile:
+            grid = infile.read()
+        if int(re.findall(r"Elements=(\d+)", grid)[0]) != config.DOF:
+            raise RuntimeError(f"{grid_path} DOF and config.DOF do not match")
+        num_nodes = int(re.findall(r"Nodes=(\d+)", grid)[0])
+        end_of_header = re.findall(r"DT=.*?\n", grid)[0]
+        headersize = grid.find(end_of_header) + len(end_of_header)
+
+        # Extract geometry information.
+        grid_data = grid[headersize:].split()
+        x = grid_data[:num_nodes]
+        y = grid_data[num_nodes:2*num_nodes]
+        cell_volume = grid_data[2*num_nodes:3*num_nodes]
+        connectivity = grid_data[3*num_nodes:]
+
+    # Load the basis and extract desired variables.
+    V, _ = utils.load_basis(trainsize, r)
+    V = np.concatenate([dproc.getvar(var, V) for var in variables])
+
+    # Save each of the basis vectors in Tecplot format matching grid.dat.
+    for j in range(r):
+        header = HEADER.format(varnames, j, j, num_nodes, config.DOF,
+                               len(variables)+2, "DOUBLE "*len(variables))
+        save_folder = config._makefolder(config.tecplot_path(),
+                                         "basis", config.TRNFMT(trainsize))
+        save_path = os.path.join(save_folder, f"vec_{j+1:03d}.dat")
+        with utils.timed_block(f"Writing basis vector {j+1:d}"):
+            with open(save_path, 'w') as outfile:
+                # Write the header.
+                outfile.write(header)
+
+                # Write the geometry data (x,y coordinates).
+                for i in range(0, len(x), NCOLS):
+                    outfile.write(' '.join(x[i:i+NCOLS]) + '\n')
+                for i in range(0, len(y), NCOLS):
+                    outfile.write(' '.join(y[i:i+NCOLS]) + '\n')
+
+                # Write the data for each variable.
+                for i in range(0, V.shape[0], NCOLS):
+                    row = ' '.join(f"{v:.9E}" for v in V[i:i+NCOLS,j])
+                    outfile.write(row + '\n')
+
+                # Write connectivity information.
+                for i in range(0, len(connectivity), NCOLS):
+                    outfile.write(' '.join(connectivity[i:i+NCOLS]) + '\n')
+    print(f"Basis info exported to {save_folder}/*.dat.")
+
+
 # =============================================================================
 if __name__ == '__main__':
     # Set up command line argument parsing.
@@ -318,6 +393,8 @@ if __name__ == '__main__':
 
     parser.add_argument("--temperature-average", action="store_true",
                         help="compute temperature averages of GEMS / ROM")
+    parser.add_argument("--basis", action="store_true",
+                        help="save basis vectors for visualization")
 
     # Do the main routine.
     args = parser.parse_args()
@@ -331,6 +408,8 @@ if __name__ == '__main__':
 
     if args.temperature_average:
         temperature_average(args.trainsize, args.modes, args.regularization)
+    elif args.basis:
+        basis(args.trainsize, args.modes, args.variables)
     else:
         main(args.timeindex, args.variables, args.snaptype,
              args.trainsize, args.modes, args.regularization)
