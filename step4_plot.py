@@ -301,8 +301,9 @@ def errors_in_time(trainsize, r, regs, cutoff=60000):
         with utils.timed_block(f"Reconstructing results for {var}"):
             Vvar = dproc.getvar(var, V)
             gems_var = dproc.getvar(var, data_gems)
-            proj_var = dproc.unscale((Vvar @ data_proj) + qbar, scales, var)
-            pred_var = dproc.unscale((Vvar @ q_rom) + qbar, scales, var)
+            qbarvar = dproc.getvar(var, qbar)
+            proj_var = dproc.unscale((Vvar @ data_proj) + qbarvar, scales, var)
+            pred_var = dproc.unscale((Vvar @ q_rom) + qbarvar, scales, var)
 
         with utils.timed_block(f"Calculating error in {var}"):
             denom = np.abs(gems_var).max(axis=0)
