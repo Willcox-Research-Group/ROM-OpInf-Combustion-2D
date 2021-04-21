@@ -285,7 +285,6 @@ def temperature_average(trainsize, r, reg, cutoff=60000):
 
 
 def basis(trainsize, r, variables=None):
-    pass
     """Export the POD basis vectors to Tecplot format.
 
     Parameters
@@ -295,9 +294,13 @@ def basis(trainsize, r, variables=None):
 
     r : int
         Number of basis vectors to save.
+
+    variables : str or list(str)
+        Variables to save, a subset of config.ROM_VARIABLES.
+        Defaults to all variables.
     """
     utils.reset_logger(trainsize)
-    
+
     if variables is None:
         variables = config.ROM_VARIABLES
     elif isinstance(variables, str):
