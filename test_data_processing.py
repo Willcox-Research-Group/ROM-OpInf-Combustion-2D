@@ -1,7 +1,5 @@
 # test_data_processing.py
 """Run basic tests for data_processing.py."""
-import h5py
-import time
 import logging
 import numpy as np
 

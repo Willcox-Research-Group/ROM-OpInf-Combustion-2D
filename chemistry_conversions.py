@@ -9,8 +9,6 @@ See data_processing.lift() and data_processing.unlift().
 * temperature(): compute temperature from pressure, specific volume,
     and species molar concentrations.
 """
-import numpy as np
-
 import config
 
 
@@ -29,7 +27,7 @@ def _check_shapes(species, *args):
             raise ValueError("species must all have same shape")
     for other in args:
         if other.shape != _shape:
-            raise ValueError(f"inputs not aligned with species")
+            raise ValueError("inputs not aligned with species")
 
 
 # Mass fractions to/from molar concentrations =================================
@@ -165,4 +163,3 @@ def temperature(p, xi, molars):
 
     # Compute temperature (ideal gas law).
     return p * xi / R_specific
-

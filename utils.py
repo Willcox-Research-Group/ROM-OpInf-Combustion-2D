@@ -12,8 +12,12 @@ try:
     import rom_operator_inference as roi
 except ModuleNotFoundError:
     print("\nrom_operator_inference module not installed",
-          "(python3 -m pip install --user rom-operator-inference)\n")
+          "(python3 -m pip install --user -r requirements.txt)\n")
     raise
+if roi.__version__ != "1.2.1":
+    raise ModuleNotFoundError("rom-operator-inference version 1.2.1 required "
+                              "(python3 -m pip install --user "
+                              "-r requirements.txt)")
 
 import config
 
@@ -195,10 +199,13 @@ def load_scaled_data(trainsize):
     Returns
     -------
     Q : (NUM_ROMVARS*DOF,trainsize) ndarray
-        Lifted, scaled data.
+        Lifted, scaled, shifted data.
 
     time_domain : (trainsize) ndarray
         Time domain corresponding to the lifted, scaled data.
+
+    qbar : (NUM_ROMVARS*DOF,) ndarray
+        Mean snapshot of the scaled training data.
 
     scales : (NUM_ROMVARS,2) ndarray
         Factors used to scale the variables.
@@ -211,14 +218,17 @@ def load_scaled_data(trainsize):
         with h5py.File(data_path, 'r') as hf:
             # Check data shapes.
             if hf["data"].shape != (config.NUM_ROMVARS*config.DOF, trainsize):
-                raise RuntimeError(f"data set 'data' has incorrect shape")
+                raise RuntimeError("data set 'data' has incorrect shape")
             if hf["time"].shape != (trainsize,):
-                raise RuntimeError(f"data set 'time' has incorrect shape")
+                raise RuntimeError("data set 'time' has incorrect shape")
+            if hf["mean"].shape != (hf["data"].shape[0],):
+                raise RuntimeError("data set 'mean' has incorrect shape")
             if hf["scales"].shape != (config.NUM_ROMVARS, 2):
-                raise RuntimeError(f"data set 'scales' has incorrect shape")
+                raise RuntimeError("data set 'scales' has incorrect shape")
 
             # Load and return the data.
-            return hf["data"][:,:], hf["time"][:], hf["scales"][:,:]
+            return (hf["data"][:,:], hf["time"][:],
+                    hf["mean"][:], hf["scales"][:,:])
 
 
 def load_basis(trainsize, r):
@@ -237,6 +247,10 @@ def load_basis(trainsize, r):
     V : (NUM_ROMVARS*DOF,r) ndarray
         POD basis of rank `r`, i.e., the first `r` left singular vectors of
         the training data.
+
+    qbar : (NUM_ROMVARS*DOF,) ndarray
+        Mean snapshot that the training data was shifted by after scaling
+        but before projection.
 
     scales : (NUM_ROMVARS,2) ndarray
         Factors used to scale the variables before projecting.
@@ -257,9 +271,11 @@ def load_basis(trainsize, r):
             rmax = hf["basis"].shape[1]
             if r is not None and rmax < r:
                 raise ValueError(f"basis only has {rmax} columns")
+            if hf["mean"].shape != (hf["basis"].shape[0],):
+                raise RuntimeError("basis and mean snapshot not aligned!")
 
             # Load the data.
-            return hf["basis"][:,:r], hf["scales"][:]
+            return hf["basis"][:,:r], hf["mean"][:], hf["scales"][:]
 
 
 def load_projected_data(trainsize, r):
@@ -297,11 +313,11 @@ def load_projected_data(trainsize, r):
             if rmax < r:
                 raise ValueError(f"basis only has {rmax} columns")
             if hf["data"].shape[1] != trainsize:
-                raise RuntimeError(f"data set 'data' has incorrect shape")
+                raise RuntimeError("data set 'data' has incorrect shape")
             if hf["ddt"].shape != hf["data"].shape:
-                raise RuntimeError(f"data sets 'data' and 'ddt' not aligned")
+                raise RuntimeError("data sets 'data' and 'ddt' not aligned")
             if hf["time"].shape != (trainsize,):
-                raise RuntimeError(f"data set 'time' has incorrect shape")
+                raise RuntimeError("data set 'time' has incorrect shape")
 
             # Get the correct rows of the saved projection data.
             return hf["data"][:r], hf["ddt"][:r], hf["time"][:]

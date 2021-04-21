@@ -9,7 +9,12 @@ import config
 
 
 _s = "    "                                 # Indentation space.
-_sglob = lambda x: sorted(glob.glob(x))     # Sorted glob().
+
+
+def _sglob(x):
+    """Sorted glob()."""
+    return sorted(glob.glob(x))
+
 
 # Regular expresssions --------------------------------------------------------
 
@@ -17,13 +22,16 @@ _trnpat = re.compile(fr".*{config.TRN_PREFIX}(\d+)")
 _dimpat = re.compile(fr".*{config.DIM_PREFIX}(\d+)")
 _regpat = re.compile(fr".*{config.ROM_PREFIX}_{config.REG_PREFIX}([\d_]+)\.h5")
 
+
 def _get_trn(foldername):
     result = _trnpat.findall(foldername)
     return int(result[0]) if result else None
 
+
 def _get_dim(foldername):
     result = _dimpat.findall(foldername)
     return int(result[0]) if result else None
+
 
 def _get_regs(filename):
     result = _regpat.findall(filename)
@@ -74,18 +82,18 @@ def main():
             print(f"{_s}* GEMS data file ({basename})")
         elif basename == config.FEATURES_FILE:
             print(f"{_s}* Features file ({basename})")
-        else:      
+        else:
             print(f"{_s}* {basename}")
     for folder in _sglob(os.path.join(config.BASE_FOLDER,
                                       config.TRN_PREFIX + '*')):
         print_trainsize_folder(folder)
-    
+
 
 if __name__ == "__main__":
     # Set up command line argument parsing.
     import argparse
     parser = argparse.ArgumentParser(description=__doc__,
-                        formatter_class=argparse.RawDescriptionHelpFormatter)
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} [--help]"""
 
     # Parse "arguments" and call main routine.

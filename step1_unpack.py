@@ -117,15 +117,15 @@ def _read_tar_and_save_data(tfile, start, stop, parallel=True):
     with utils.timed_block(f"Saving snapshots {start}-{stop} to HDF5"):
         with h5py.File(save_path, 'a') as hf:
             hf["data"][:,start:stop] = gems_data
-            hf["time"][  start:stop] = times
+            hf["time"][start:stop] = times
     print(f"Data saved to {save_path}.", flush=True)
     if parallel:
         lock.release()  # Let other processes resume.
 
 
-def _globalize_lock(l):
+def _globalize_lock(L):
     global lock
-    lock = l
+    lock = L
 
 
 def main(data_folder, overwrite=False, serial=False):
@@ -188,9 +188,8 @@ def main(data_folder, overwrite=False, serial=False):
         with h5py.File(save_path, 'w') as hf:
             hf.create_dataset("data", shape=(config.DOF*config.NUM_GEMSVARS,
                                              num_snapshots),
-                                      dtype=np.float64)
-            hf.create_dataset("time", shape=(num_snapshots,),
-                                      dtype=np.float64)
+                              dtype=np.float64)
+            hf.create_dataset("time", shape=(num_snapshots,), dtype=np.float64)
     logging.info(f"Data file initialized as {save_path}.")
 
     # Read the files in chunks.
@@ -209,7 +208,7 @@ if __name__ == '__main__':
     # Set up command line argument parsing.
     import argparse
     parser = argparse.ArgumentParser(description=__doc__,
-                        formatter_class=argparse.RawDescriptionHelpFormatter)
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} --help
         python3 {__file__} DATAFOLDER [--overwrite] [--serial]"""
 

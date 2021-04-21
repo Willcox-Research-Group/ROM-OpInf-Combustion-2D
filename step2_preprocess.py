@@ -65,31 +65,31 @@ def main(trainsize, num_modes):
     # STEP 2A: Lift and scale the data ----------------------------------------
     try:
         # Attempt to load existing lifted, scaled data.
-        scaled_data, time_domain, scales = utils.load_scaled_data(trainsize)
+        training_data, time, qbar, scales = utils.load_scaled_data(trainsize)
 
     except utils.DataNotFoundError:
         # Lift the GEMS data, then scale the lifted snapshots by variable.
-        lifted_data, time_domain = step2a.load_and_lift_gems_data(trainsize)
-        scaled_data, scales = step2a.scale_and_save_data(trainsize,
-                                                         lifted_data,
-                                                         time_domain)
+        lifted_data, time = step2a.load_and_lift_gems_data(trainsize)
+        training_data, qbar, scales = step2a.scale_and_save_data(trainsize,
+                                                                 lifted_data,
+                                                                 time)
         del lifted_data
 
     # STEP 2B: Get the POD basis from the lifted, scaled data -----------------
     try:
         # Attempt to load existing SVD data.
-        basis, scales = utils.load_basis(trainsize, None)
+        basis, qbar, scales = utils.load_basis(trainsize, None)
         if basis.shape[1] < num_modes:
             raise utils.DataNotFoundError("not enough saved basis vectors")
         num_modes = basis.shape[1]      # Use larger basis size if available.
 
-    except utils.DataNotFoundError as e:
+    except utils.DataNotFoundError:
         # Compute and save the (randomized) SVD from the training data.
         basis = step2b.compute_and_save_pod_basis(num_modes,
-                                                  scaled_data, scales)
+                                                  training_data, scales)
 
     # STEP 2C: Project data to the appropriate subspace -----------------------
-    return step2c.project_and_save_data(scaled_data, time_domain, basis)
+    return step2c.project_and_save_data(training_data, time, basis)
 
 
 # =============================================================================
@@ -97,7 +97,7 @@ if __name__ == "__main__":
     # Set up command line argument parsing.
     import argparse
     parser = argparse.ArgumentParser(description=__doc__,
-                        formatter_class=argparse.RawDescriptionHelpFormatter)
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} --help
         python3 {__file__} TRAINSIZE MODES"""
     parser.add_argument("trainsize", type=int,

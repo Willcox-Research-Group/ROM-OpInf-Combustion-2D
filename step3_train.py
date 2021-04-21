@@ -194,8 +194,7 @@ def train_single(trainsize, r, regs):
     with utils.timed_block(f"Training ROM with k={trainsize:d}, "
                            f"r={r:d}, λ1={λ1:.0f}, λ2={λ2:.0f}"):
         rom = roi.InferredContinuousROM(config.MODELFORM)
-        rom.fit(None, Q_, Qdot_, U, P=regularizer(r, d, λ1, λ2),
-                compute_extras=False, check_regularizer=False)
+        rom.fit(None, Q_, Qdot_, U, P=regularizer(r, d, λ1, λ2))
         save_trained_rom(trainsize, r, regs, rom)
 
 
@@ -249,8 +248,7 @@ def train_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     print(f"TRAINING {λ1grid.size*λ2grid.size} ROMS")
     with utils.timed_block(f"Constructing least-squares solver, r={r:d}"):
         rom = roi.InferredContinuousROM(config.MODELFORM)
-        rom._construct_solver(None, Q_, Qdot_, U, np.ones(d),
-                              compute_extras=False, check_regularizer=False)
+        rom._construct_solver(None, Q_, Qdot_, U, np.ones(d))
 
     # Test each regularization parameter.
     errors_pass = {}
@@ -270,8 +268,9 @@ def train_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
 
             # Calculate integrated relative errors in the reduced space.
             if q_rom.shape[1] > trainsize:
-                errors[(λ1,λ2)] = roi.post.Lp_error(Q_, q_rom[:,:trainsize],
-                                                            t[:trainsize])[1]
+                errors[(λ1,λ2)] = roi.post.Lp_error(Q_,
+                                                    q_rom[:,:trainsize],
+                                                    t[:trainsize])[1]
 
     # Choose and save the ROM with the least error.
     if not errors_pass:
@@ -333,8 +332,7 @@ def train_minimize(trainsize, r, regs, testsize=None, margin=1.5):
     # Create a solver mapping regularization parameters to operators.
     with utils.timed_block(f"Constructing least-squares solver, r={r:d}"):
         rom = roi.InferredContinuousROM(config.MODELFORM)
-        rom._construct_solver(None, Q_, Qdot_, U, np.ones(d),
-                              compute_extras=False, check_regularizer=False)
+        rom._construct_solver(None, Q_, Qdot_, U, np.ones(d))
 
     # Test each regularization parameter.
     def training_error(log10regs):
@@ -405,7 +403,7 @@ def _train_minimize_1D(trainsize, r, regs, testsize=None, margin=1.5):
     utils.reset_logger(trainsize)
 
     # Parse aguments.
-    d = check_lstsq_size(trainsize, r)
+    check_lstsq_size(trainsize, r)
     log10regs = np.log10(check_regs(regs))
 
     # Load training data.
@@ -419,7 +417,7 @@ def _train_minimize_1D(trainsize, r, regs, testsize=None, margin=1.5):
     # Create a solver mapping regularization parameters to operators.
     with utils.timed_block(f"Constructing least-squares solver, r={r:d}"):
         rom = roi.InferredContinuousROM(config.MODELFORM)
-        rom._construct_solver(None, Q_, Qdot_, U, 1, compute_extras=False)
+        rom._construct_solver(None, Q_, Qdot_, U, 1)
 
     # Test each regularization parameter.
     def training_error(log10reg):
@@ -459,13 +457,12 @@ def _train_minimize_1D(trainsize, r, regs, testsize=None, margin=1.5):
         logging.info(message)
 
 
-
 # =============================================================================
 if __name__ == "__main__":
     # Set up command line argument parsing.
     import argparse
     parser = argparse.ArgumentParser(description=__doc__,
-                        formatter_class=argparse.RawDescriptionHelpFormatter)
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} --help
         python3 {__file__} --single TRAINSIZE R REG1 REG2
         python3 {__file__} --gridsearch TRAINSIZE R REG1 ... REG6

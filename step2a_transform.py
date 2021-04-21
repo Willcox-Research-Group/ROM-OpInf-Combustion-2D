@@ -67,21 +67,38 @@ def scale_and_save_data(trainsize, lifted_data, time_domain):
 
     time_domain : (k>trainsize,) ndarray
         The time domain corresponding to the lifted snapshots.
+
+    Returns
+    -------
+    training_data : (NUM_ROMVARS*DOF, trainsize) ndarray
+        Scaled, shifted snapshots to use as training data for the basis.
+
+    qbar : (NUM_ROMVARS*DOF,) ndarray
+        Mean snapshot of the scaled training data.
+
+    scales : (NUM_ROMVARS,2) ndarray
+        Info on how the snapshot data was scaled.
     """
     # Scale the learning variables to the bounds in config.SCALE_TO.
     with utils.timed_block(f"Scaling {trainsize:d} lifted snapshots"):
-        scaled_data, scales = dproc.scale(lifted_data[:,:trainsize].copy())
+        training_data, scales = dproc.scale(lifted_data[:,:trainsize].copy())
+
+    # Shift the scaled data by the mean snapshot.
+    with utils.timed_block(f"Shifting {trainsize:d} scaled snapshots by mean"):
+        qbar = np.mean(training_data, axis=1)       # Compute mean snapshot.
+        training_data -= qbar.reshape((-1,1))       # Shift columns by mean.
 
     # Save the lifted, scaled training data.
     save_path = config.scaled_data_path(trainsize)
     with utils.timed_block("Saving scaled, lifted training data"):
         with h5py.File(save_path, 'w') as hf:
-            hf.create_dataset("data", data=scaled_data)
+            hf.create_dataset("data", data=training_data)
             hf.create_dataset("time", data=time_domain[:trainsize])
+            hf.create_dataset("mean", data=qbar)
             hf.create_dataset("scales", data=scales)
-    logging.info(f"Scaled data saved as {save_path}.\n")
+    logging.info(f"Processed data saved to {save_path}.\n")
 
-    return scaled_data, scales
+    return training_data, qbar, scales
 
 
 def main(trainsizes):
@@ -111,7 +128,7 @@ if __name__ == "__main__":
     # Set up command line argument parsing.
     import argparse
     parser = argparse.ArgumentParser(description=__doc__,
-                        formatter_class=argparse.RawDescriptionHelpFormatter)
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} --help
         python3 {__file__} TRAINSIZE [...]"""
     parser.add_argument("trainsize", type=int, nargs='+',

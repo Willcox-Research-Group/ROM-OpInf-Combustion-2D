@@ -71,9 +71,13 @@ def simulate_rom(trainsize, r, regs, steps=None):
     t : (nt,) ndarray
         Time domain corresponding to the ROM outputs.
 
-    V : (config*NUM_ROMVARS*config.DOF,r) ndarray
+    V : (NUM_ROMVARS*DOF,r) ndarray
         POD basis used to project the training data (and for reconstructing
         the full-order scaled predictions).
+
+    qbar : (NUM_ROMVARS*DOF,) ndarray
+        Mean snapshot that the training data was shifted by after scaling
+        but before projection.
 
     scales : (NUM_ROMVARS,4) ndarray
         Information for how the data was scaled. See data_processing.scale().
@@ -83,7 +87,7 @@ def simulate_rom(trainsize, r, regs, steps=None):
     """
     # Load the time domain, basis, initial conditions, and trained ROM.
     t = utils.load_time_domain(steps)
-    V, scales = utils.load_basis(trainsize, r)
+    V, qbar, scales = utils.load_basis(trainsize, r)
     Q_, _, _ = utils.load_projected_data(trainsize, r)
     rom = utils.load_rom(trainsize, r, regs)
     λ1, λ2 = regs
@@ -93,10 +97,10 @@ def simulate_rom(trainsize, r, regs, steps=None):
                            f"λ1={λ1:.0f}, λ2={λ2:.0f} over full time domain"):
         q_rom = rom.predict(Q_[:,0], t, config.U, method="RK45")
 
-    return t, V, scales, q_rom
+    return t, V, qbar, scales, q_rom
 
 
-def get_traces(locs, data, V=None, scales=None):
+def get_traces(locs, data, V=None, qbar=None, scales=None):
     """Reconstruct time traces from data, unprojecting and unscaling if needed.
 
     Parameters
@@ -111,6 +115,11 @@ def get_traces(locs, data, V=None, scales=None):
     V : (config.DOF*config.NUM_ROMVARS,r) ndarray or None
         Rank-r POD basis. Only needed if `data` is low-dimensional ROM output.
 
+    qbar : (NUM_ROMVARS*DOF,) ndarray
+        Mean snapshot that the training data was shifted by after scaling
+        but before projection. Only needed if `data` is low-dimensional ROM
+        output.
+
     scales : (config.NUM_ROMVARS,4) ndarray or None
         Information for how the data was scaled (see data_processing.scale()).
         Only needed if `data` is low-dimensional ROM output.
@@ -120,13 +129,14 @@ def get_traces(locs, data, V=None, scales=None):
     traces : (l,nt) ndarray
         The specified time traces.
     """
-    if V is not None and scales is not None:
-        return dproc.unscale(V[locs] @ data, scales)
+    if V is not None and qbar is not None and scales is not None:
+        qbar = qbar.reshape((-1,1))
+        return dproc.unscale((V[locs] @ data) + qbar[locs,:], scales)
     else:
         return data[locs]
 
 
-def get_feature(key, data, V=None, scales=None):
+def get_feature(key, data, V=None, qbar=None, scales=None):
     """Reconstruct a spatial statistical feature from data, unprojecting and
     unscaling if needed.
 
@@ -135,14 +145,19 @@ def get_feature(key, data, V=None, scales=None):
     key : str
         Which statistical feature to calculate (T_mean, CH4_sum, etc.)
 
-    data : (r,nt) or (config.DOF*config.NUM_ROMVARS,nt) ndarray
+    data : (r,nt) or (DOF*NUM_ROMVARS,nt) ndarray
         Data from which to extract the features, either the output of a ROM
         or a high-dimensional data set.
 
-    V : (config.DOF*config.NUM_ROMVARS,r) ndarray or None
+    V : (DOF*NUM_ROMVARS,r) ndarray or None
         Rank-r POD basis. Only needed if data is low-dimensional ROM output.
 
-    scales : (config.NUM_ROMVARS,2) ndarray or None
+    qbar : (NUM_ROMVARS*DOF,) ndarray
+        Mean snapshot that the training data was shifted by after scaling
+        but before projection. Only needed if `data` is low-dimensional ROM
+        output.
+
+    scales : (NUM_ROMVARS,2) ndarray or None
         Information for how the data was scaled (see data_processing.scale()).
         Only needed if `data` is low-dimensional ROM output.
 
@@ -153,10 +168,12 @@ def get_feature(key, data, V=None, scales=None):
     """
     var, action = key.split('_')
     print(f"{action}({var})", end='..', flush=True)
-    if V is not None and scales is not None:
-        variable = dproc.unscale(dproc.getvar(var, V) @ data, scales, var)
+    if V is not None and qbar is not None and scales is not None:
+        qbar = qbar.reshape((-1,1))
+        data_scaled = (dproc.getvar(var, V) @ data) + dproc.getvar(var, qbar)
+        variable = dproc.unscale(data_scaled, scales, var)
     else:
-        variable = dproc.getvar(var, data)
+        variable = dproc.getvar(var, data)          # noqa
     return eval(f"variable.{action}(axis=0)")
 
 
@@ -179,7 +196,7 @@ def point_traces(trainsize, r, regs, elems, cutoff=60000):
         Regularization hyperparameters used to train the ROM.
 
     elems : list(int) or ndarray(int)
-        Indices in the spatial domain at which to compute the time traces.
+        Indices in the spatial domain at which to compute the point traces.
 
     cutoff : int
         Numer of time steps to plot.
@@ -200,12 +217,12 @@ def point_traces(trainsize, r, regs, elems, cutoff=60000):
         traces_gems = dproc.lift(data[:,:cutoff])
 
     # Load and simulate the ROM.
-    t, V, scales, q_rom = simulate_rom(trainsize, r, regs, cutoff)
+    t, V, qbar, scales, q_rom = simulate_rom(trainsize, r, regs, cutoff)
 
     # Reconstruct and rescale the simulation results.
     simend = q_rom.shape[1]
     with utils.timed_block("Reconstructing simulation results"):
-        traces_rom = dproc.unscale(V[elems] @ q_rom, scales)
+        traces_rom = get_traces(elems, q_rom, V, qbar, scales)
 
     # Save a figure for each variable.
     xticks = np.arange(t[0], t[-1]+.001, .002)
@@ -260,7 +277,8 @@ def errors_in_time(trainsize, r, regs, cutoff=60000):
         Numer of time steps to plot.
     """
     # Load and simulate the ROM.
-    t, V, scales, q_rom = simulate_rom(trainsize, r, regs, cutoff)
+    t, V, qbar, scales, q_rom = simulate_rom(trainsize, r, regs, cutoff)
+    qbar = qbar.reshape((-1,1))
 
     # Load and lift the true results.
     data, _ = utils.load_gems_data(cols=cutoff)
@@ -270,9 +288,9 @@ def errors_in_time(trainsize, r, regs, cutoff=60000):
 
     # Shift and project the data (unscaling done later by chunk).
     with utils.timed_block("Projecting GEMS data to POD subspace"):
-        data_shifted, _ = dproc.scale(data_gems.copy(), scales)
-        data_proj = V.T @ data_shifted
-        del data_shifted
+        data_scaled, _ = dproc.scale(data_gems.copy(), scales)
+        data_proj = V.T @ (data_scaled - qbar)
+        del data_scaled
 
     # Initialize the figure.
     fig, axes = plt.subplots(3, 3, figsize=(12,6), sharex=True)
@@ -283,8 +301,9 @@ def errors_in_time(trainsize, r, regs, cutoff=60000):
         with utils.timed_block(f"Reconstructing results for {var}"):
             Vvar = dproc.getvar(var, V)
             gems_var = dproc.getvar(var, data_gems)
-            proj_var = dproc.unscale(Vvar @ data_proj, scales, var)
-            pred_var = dproc.unscale(Vvar @ q_rom, scales, var)
+            qbarvar = dproc.getvar(var, qbar)
+            proj_var = dproc.unscale((Vvar @ data_proj) + qbarvar, scales, var)
+            pred_var = dproc.unscale((Vvar @ q_rom) + qbarvar, scales, var)
 
         with utils.timed_block(f"Calculating error in {var}"):
             denom = np.abs(gems_var).max(axis=0)
@@ -388,7 +407,7 @@ def spatial_statistics(trainsize, r, regs):
     keys = np.reshape(keys, (4,2), order='F')
 
     # Load and simulate the ROM.
-    t, V, scales, q_rom = simulate_rom(trainsize, r, regs)
+    t, V, qbar, scales, q_rom = simulate_rom(trainsize, r, regs)
 
     # Initialize the figure.
     fig, axes = plt.subplots(keys.shape[0], keys.shape[1],
@@ -396,8 +415,8 @@ def spatial_statistics(trainsize, r, regs):
 
     # Calculate and plot the results.
     for ax,key in zip(axes.flat, keys.flat):
-        with utils.timed_block(f"Reconstructing"):
-            feature_rom = get_feature(key, q_rom, V, scales)
+        with utils.timed_block("Reconstructing"):
+            feature_rom = get_feature(key, q_rom, V, qbar, scales)
         ax.plot(t, feature_gems[key], lw=1, **config.GEMS_STYLE)
         ax.plot(t[:q_rom.shape[1]], feature_rom, lw=1, **config.ROM_STYLE)
         ax.axvline(t[trainsize], color='k')
@@ -425,7 +444,8 @@ def spatial_statistics(trainsize, r, regs):
                       f"_{config.DIMFMT(r)}"
                       f"_{config.REGFMT(regs)}.pdf")
 
-# =============================================================================
+
+# Main routine ================================================================
 
 def main(trainsize, r, regs, elems=None, plotPointTrace=False,
          plotRelativeErrors=False, plotSpatialStatistics=False):
@@ -471,7 +491,7 @@ if __name__ == "__main__":
     # Set up command line argument parsing.
     import argparse
     parser = argparse.ArgumentParser(description=__doc__,
-                        formatter_class=argparse.RawDescriptionHelpFormatter)
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} --help
         python3 {__file__} --point-traces TRAINSIZE MODES REG1 REG2
                            [--location L [...]]
@@ -494,7 +514,7 @@ if __name__ == "__main__":
                              "monitoring locations")
     parser.add_argument("--relative-errors", action="store_true",
                         help="plot relative errors in time, averaged over "
-                              "the spatial domain")
+                             "the spatial domain")
     parser.add_argument("--spatial-statistics", action="store_true",
                         help="plot spatial averages and species integrals")
 
