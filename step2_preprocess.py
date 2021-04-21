@@ -83,7 +83,7 @@ def main(trainsize, num_modes):
             raise utils.DataNotFoundError("not enough saved basis vectors")
         num_modes = basis.shape[1]      # Use larger basis size if available.
 
-    except utils.DataNotFoundError as e:
+    except utils.DataNotFoundError:
         # Compute and save the (randomized) SVD from the training data.
         basis = step2b.compute_and_save_pod_basis(num_modes,
                                                   training_data, scales)
@@ -97,7 +97,7 @@ if __name__ == "__main__":
     # Set up command line argument parsing.
     import argparse
     parser = argparse.ArgumentParser(description=__doc__,
-                        formatter_class=argparse.RawDescriptionHelpFormatter)
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} --help
         python3 {__file__} TRAINSIZE MODES"""
     parser.add_argument("trainsize", type=int,

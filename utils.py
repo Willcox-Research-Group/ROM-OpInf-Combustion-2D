@@ -16,7 +16,8 @@ except ModuleNotFoundError:
     raise
 if roi.__version__ != "1.2.1":
     raise ModuleNotFoundError("rom-operator-inference version 1.2.1 required "
-                         "(python3 -m pip install --user -r requirements.txt)")
+                              "(python3 -m pip install --user "
+                              "-r requirements.txt)")
 
 import config
 
@@ -217,13 +218,13 @@ def load_scaled_data(trainsize):
         with h5py.File(data_path, 'r') as hf:
             # Check data shapes.
             if hf["data"].shape != (config.NUM_ROMVARS*config.DOF, trainsize):
-                raise RuntimeError(f"data set 'data' has incorrect shape")
+                raise RuntimeError("data set 'data' has incorrect shape")
             if hf["time"].shape != (trainsize,):
-                raise RuntimeError(f"data set 'time' has incorrect shape")
+                raise RuntimeError("data set 'time' has incorrect shape")
             if hf["mean"].shape != (hf["data"].shape[0],):
                 raise RuntimeError("data set 'mean' has incorrect shape")
             if hf["scales"].shape != (config.NUM_ROMVARS, 2):
-                raise RuntimeError(f"data set 'scales' has incorrect shape")
+                raise RuntimeError("data set 'scales' has incorrect shape")
 
             # Load and return the data.
             return (hf["data"][:,:], hf["time"][:],
@@ -312,11 +313,11 @@ def load_projected_data(trainsize, r):
             if rmax < r:
                 raise ValueError(f"basis only has {rmax} columns")
             if hf["data"].shape[1] != trainsize:
-                raise RuntimeError(f"data set 'data' has incorrect shape")
+                raise RuntimeError("data set 'data' has incorrect shape")
             if hf["ddt"].shape != hf["data"].shape:
-                raise RuntimeError(f"data sets 'data' and 'ddt' not aligned")
+                raise RuntimeError("data sets 'data' and 'ddt' not aligned")
             if hf["time"].shape != (trainsize,):
-                raise RuntimeError(f"data set 'time' has incorrect shape")
+                raise RuntimeError("data set 'time' has incorrect shape")
 
             # Get the correct rows of the saved projection data.
             return hf["data"][:r], hf["ddt"][:r], hf["time"][:]

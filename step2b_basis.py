@@ -61,7 +61,7 @@ def compute_and_save_pod_basis(num_modes, training_data, qbar, scales):
 
     # Save the POD basis.
     save_path = config.basis_path(training_data.shape[1])
-    with utils.timed_block(f"Saving POD basis"):
+    with utils.timed_block("Saving POD basis"):
         with h5py.File(save_path, 'w') as hf:
             hf.create_dataset("basis", data=V)
             hf.create_dataset("svdvals", data=svdvals)
@@ -94,7 +94,7 @@ def compute_and_save_all_svdvals(training_data):
     # Save the POD basis.
     save_path = config.basis_path(training_data.shape[1])
     save_path = save_path.replace(config.BASIS_FILE, "svdvals.h5")
-    with utils.timed_block(f"Saving singular values"):
+    with utils.timed_block("Saving singular values"):
         with h5py.File(save_path, 'w') as hf:
             hf.create_dataset("svdvals", data=svdvals)
     logging.info(f"Singular values saved to {save_path}.\n")
@@ -138,7 +138,7 @@ if __name__ == "__main__":
     # Set up command line argument parsing.
     import argparse
     parser = argparse.ArgumentParser(description=__doc__,
-                        formatter_class=argparse.RawDescriptionHelpFormatter)
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} --help
         python3 {__file__} TRAINSIZE MODES"""
     parser.add_argument("trainsize", type=int,

@@ -51,6 +51,8 @@ import data_processing as dproc
 import step4_plot as step4
 
 
+# header = HEADER.format(varnames, timeindex, solutiontime,
+#                        num_nodes, DOF, num_vars, datatypes)
 HEADER = """TITLE = "Combustion GEMS 2D Nonintrusive ROM"
 VARIABLES="x"
 "y"
@@ -61,8 +63,7 @@ Nodes={:d}, Elements={:d}, ZONETYPE=FEQuadrilateral
 DATAPACKING=BLOCK
 VARLOCATION=([3-{:d}]=CELLCENTERED)
 DT=({:s})
-""" # header = HEADER.format(varnames, timeindex, solutiontime,
-    #                        num_nodes, DOF, num_vars, datatypes)
+"""
 
 NCOLS = 4
 
@@ -134,7 +135,7 @@ def main(timeindices, variables=None, snaptype=("gems", "rom", "error"),
         grid_data = grid[headersize:].split()
         x = grid_data[:num_nodes]
         y = grid_data[num_nodes:2*num_nodes]
-        cell_volume = grid_data[2*num_nodes:3*num_nodes]
+        # cell_volume = grid_data[2*num_nodes:3*num_nodes]
         connectivity = grid_data[3*num_nodes:]
 
     # Extract full-order data if needed.
@@ -143,7 +144,7 @@ def main(timeindices, variables=None, snaptype=("gems", "rom", "error"),
         with utils.timed_block("Lifting selected snapshots of GEMS data"):
             lifted_data = dproc.lift(gems_data)
             true_snaps = np.concatenate([dproc.getvar(v, lifted_data)
-                                                        for v in variables])
+                                         for v in variables])
     # Simulate ROM if needed.
     if ("rom" in snaptype) or ("error" in snaptype):
         t, V, scales, q_rom = step4.simulate_rom(trainsize, r, reg,
@@ -235,7 +236,7 @@ def temperature_average(trainsize, r, reg, cutoff=60000):
         grid_data = grid[headersize:].split()
         x = grid_data[:num_nodes]
         y = grid_data[num_nodes:2*num_nodes]
-        cell_volume = grid_data[2*num_nodes:3*num_nodes]
+        # cell_volume = grid_data[2*num_nodes:3*num_nodes]
         connectivity = grid_data[3*num_nodes:]
 
     # Compute full-order time-averaged temperature from GEMS data.
@@ -323,7 +324,7 @@ def basis(trainsize, r, variables=None):
         grid_data = grid[headersize:].split()
         x = grid_data[:num_nodes]
         y = grid_data[num_nodes:2*num_nodes]
-        cell_volume = grid_data[2*num_nodes:3*num_nodes]
+        # cell_volume = grid_data[2*num_nodes:3*num_nodes]
         connectivity = grid_data[3*num_nodes:]
 
     # Load the basis and extract desired variables.
@@ -364,7 +365,7 @@ if __name__ == '__main__':
     # Set up command line argument parsing.
     import argparse
     parser = argparse.ArgumentParser(description=__doc__,
-                        formatter_class=argparse.RawDescriptionHelpFormatter)
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} -h
         python3 {__file__} (gems | rom | error)
                                 --timeindex T [...]
