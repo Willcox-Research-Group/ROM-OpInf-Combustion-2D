@@ -327,7 +327,7 @@ def basis(trainsize, r, variables=None):
         connectivity = grid_data[3*num_nodes:]
 
     # Load the basis and extract desired variables.
-    V, _ = utils.load_basis(trainsize, r)
+    V, _, _ = utils.load_basis(trainsize, r)
     V = np.concatenate([dproc.getvar(var, V) for var in variables])
 
     # Save each of the basis vectors in Tecplot format matching grid.dat.
