@@ -128,7 +128,7 @@ if __name__ == "__main__":
     # Set up command line argument parsing.
     import argparse
     parser = argparse.ArgumentParser(description=__doc__,
-                        formatter_class=argparse.RawDescriptionHelpFormatter)
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} --help
         python3 {__file__} TRAINSIZE [...]"""
     parser.add_argument("trainsize", type=int, nargs='+',

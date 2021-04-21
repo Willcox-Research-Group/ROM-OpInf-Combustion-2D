@@ -9,8 +9,6 @@
 import logging
 import numpy as np
 
-import rom_operator_inference as roi
-
 import config
 import chemistry_conversions as chem
 
@@ -88,10 +86,10 @@ def _varslice(varname, datasize):
     datasize : int
         Number of rows (2D) or entries (1D) of data, e.g., data.shape[0].
         Must be a multiple of config.NUM_ROMVARS.
-    
+
     varname : str
         An entry of config.ROM_VARIABLES indicating the variable to get/set.
-    
+
     Returns
     -------
     s : slice
@@ -103,7 +101,7 @@ def _varslice(varname, datasize):
         raise ValueError("data cannot be split evenly"
                          f" into {config.NUM_ROMVARS} chunks")
     return slice(varindex*chunksize, (varindex+1)*chunksize)
-    
+
 
 def getvar(varname, data):
     """Extract the specified variable from the given data."""

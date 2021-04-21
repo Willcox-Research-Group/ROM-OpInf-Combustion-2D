@@ -268,8 +268,9 @@ def train_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
 
             # Calculate integrated relative errors in the reduced space.
             if q_rom.shape[1] > trainsize:
-                errors[(λ1,λ2)] = roi.post.Lp_error(Q_, q_rom[:,:trainsize],
-                                                            t[:trainsize])[1]
+                errors[(λ1,λ2)] = roi.post.Lp_error(Q_,
+                                                    q_rom[:,:trainsize],
+                                                    t[:trainsize])[1]
 
     # Choose and save the ROM with the least error.
     if not errors_pass:
@@ -402,7 +403,7 @@ def _train_minimize_1D(trainsize, r, regs, testsize=None, margin=1.5):
     utils.reset_logger(trainsize)
 
     # Parse aguments.
-    d = check_lstsq_size(trainsize, r)
+    check_lstsq_size(trainsize, r)
     log10regs = np.log10(check_regs(regs))
 
     # Load training data.
@@ -456,13 +457,12 @@ def _train_minimize_1D(trainsize, r, regs, testsize=None, margin=1.5):
         logging.info(message)
 
 
-
 # =============================================================================
 if __name__ == "__main__":
     # Set up command line argument parsing.
     import argparse
     parser = argparse.ArgumentParser(description=__doc__,
-                        formatter_class=argparse.RawDescriptionHelpFormatter)
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} --help
         python3 {__file__} --single TRAINSIZE R REG1 REG2
         python3 {__file__} --gridsearch TRAINSIZE R REG1 ... REG6

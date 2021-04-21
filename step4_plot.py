@@ -173,7 +173,7 @@ def get_feature(key, data, V=None, qbar=None, scales=None):
         data_scaled = (dproc.getvar(var, V) @ data) + dproc.getvar(var, qbar)
         variable = dproc.unscale(data_scaled, scales, var)
     else:
-        variable = dproc.getvar(var, data)
+        variable = dproc.getvar(var, data)          # noqa
     return eval(f"variable.{action}(axis=0)")
 
 
@@ -415,7 +415,7 @@ def spatial_statistics(trainsize, r, regs):
 
     # Calculate and plot the results.
     for ax,key in zip(axes.flat, keys.flat):
-        with utils.timed_block(f"Reconstructing"):
+        with utils.timed_block("Reconstructing"):
             feature_rom = get_feature(key, q_rom, V, qbar, scales)
         ax.plot(t, feature_gems[key], lw=1, **config.GEMS_STYLE)
         ax.plot(t[:q_rom.shape[1]], feature_rom, lw=1, **config.ROM_STYLE)
@@ -444,7 +444,8 @@ def spatial_statistics(trainsize, r, regs):
                       f"_{config.DIMFMT(r)}"
                       f"_{config.REGFMT(regs)}.pdf")
 
-# =============================================================================
+
+# Main routine ================================================================
 
 def main(trainsize, r, regs, elems=None, plotPointTrace=False,
          plotRelativeErrors=False, plotSpatialStatistics=False):
@@ -490,7 +491,7 @@ if __name__ == "__main__":
     # Set up command line argument parsing.
     import argparse
     parser = argparse.ArgumentParser(description=__doc__,
-                        formatter_class=argparse.RawDescriptionHelpFormatter)
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} --help
         python3 {__file__} --point-traces TRAINSIZE MODES REG1 REG2
                            [--location L [...]]
@@ -513,7 +514,7 @@ if __name__ == "__main__":
                              "monitoring locations")
     parser.add_argument("--relative-errors", action="store_true",
                         help="plot relative errors in time, averaged over "
-                              "the spatial domain")
+                             "the spatial domain")
     parser.add_argument("--spatial-statistics", action="store_true",
                         help="plot spatial averages and species integrals")
 

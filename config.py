@@ -37,13 +37,16 @@ DIM_PREFIX = "r"                            # Prefix for ROM dimension folders.
 ROM_PREFIX = "rom"                          # Prefix for trained ROM files.
 REG_PREFIX = "reg"                          # Prefix for regularization values.
 
+
 def TRNFMT(k):
     """String format for trianing sizes."""
     return f"{TRN_PREFIX}{k:05d}"
 
+
 def DIMFMT(r):
     """String format for ROM dimensions."""
     return f"{DIM_PREFIX}{r:03d}"
+
 
 def REGFMT(λs):
     """String format for the regularization parmeters."""
@@ -51,14 +54,17 @@ def REGFMT(λs):
         raise ValueError(f"invalid regularization parameters {λs}")
     return REG_PREFIX + "_".join(f"{λ:06.0f}" for λ in λs)
 
+
 # Domain geometry -------------------------------------------------------------
 
 DOF = 38523                                 # Spatial degrees of freedom.
 
-MONITOR_LOCATIONS = [36915,                 # Index of monitor location 1.
-                     37886,                 # Index of monitor location 2.
-                     36443,                 # Index of monitor location 3.
-                      6141]                 # Index of monitor location 4.
+MONITOR_LOCATIONS = [
+    36915,                                  # Index of monitor location 1.
+    37886,                                  # Index of monitor location 2.
+    36443,                                  # Index of monitor location 3.
+    6141,                                   # Index of monitor location 4.
+]
 
 DT = 1e-7                                   # Temporal resolution of snapshots.
 
@@ -77,6 +83,7 @@ NUM_SPECIES = len(SPECIES)                  # Number of chemical species.
 NUM_GEMSVARS = len(GEMS_VARIABLES)          # Number of GEMS variables.
 NUM_ROMVARS = len(ROM_VARIABLES)            # Number of learning variables.
 
+
 # Chemistry constants ---------------------------------------------------------
 
 MOLAR_MASSES = [16.04,                      # Molar mass of CH4 [kg/kmol].
@@ -86,13 +93,18 @@ MOLAR_MASSES = [16.04,                      # Molar mass of CH4 [kg/kmol].
 
 R_UNIVERSAL = 8.3144598                     # Univ. gas constant [J/(mol K)].
 
+
 # ROM Structure ---------------------------------------------------------------
 
 MODELFORM = "cAHB"                          # ROM operators to be inferred.
 
+
 # Input function (Pressure oscillation) ---------------------------------------
 
-U = lambda t: 1e6*(1 + 0.1*np.sin(np.pi*1e4*t))
+def U(t):
+    """Input function for pressure oscillation."""
+    return 1e6*(1 + 0.1*np.sin(np.pi*1e4*t))
+
 
 # Matplotlib plot customization -----------------------------------------------
 
@@ -101,30 +113,33 @@ plt.rc("text", usetex=True)                 # Use LaTeX fonts.
 plt.rc("font", family="serif")              # Serif axis labels.
 plt.rc("legend", edgecolor="none",          # No borders around legends.
                  frameon=False)             # No legend backgrounds.
+plt.rc("axes", linewidth=.5)                # Thinner plot borders.
 
 # Names of the learning variables (for LaTeX fonts).
-VARTITLES = {  "p": "Pressure",
-              "vx": "$x$-velocity",
-              "vy": "$y$-velocity",
-               "T": "Temperature",
-              "xi": r"$\xi$",
-             "CH4": "CH$_4$",
-              "O2": "O$_2$",
-             "H2O": "H$_2$O",
-             "CO2": "CO$_2$",
-            }
+VARTITLES = {
+    "p": "Pressure",
+    "vx": "$x$-velocity",
+    "vy": "$y$-velocity",
+    "T": "Temperature",
+    "xi": r"$\xi$",
+    "CH4": "CH$_4$",
+    "O2": "O$_2$",
+    "H2O": "H$_2$O",
+    "CO2": "CO$_2$",
+}
 
 # Units of the learning variables (for LaTeX fonts).
-VARUNITS = {   "p": "Pa",
-              "vx": "m/s",
-              "vy": "m/s",
-               "T": "K",
-              "xi": "m$^3$/kg",
-             "CH4": "kmol/m$^3$",
-              "O2": "kmol/m$^3$",
-             "H2O": "kmol/m$^3$",
-             "CO2": "kmol/m$^3$",
-            }
+VARUNITS = {
+    "p": "Pa",
+    "vx": "m/s",
+    "vy": "m/s",
+    "T": "K",
+    "xi": "m$^3$/kg",
+    "CH4": "kmol/m$^3$",
+    "O2": "kmol/m$^3$",
+    "H2O": "kmol/m$^3$",
+    "CO2": "kmol/m$^3$",
+}
 
 # Learning variable titles with units (for LaTeX fonts).
 VARLABELS = {v: f"{VARTITLES[v]} [{VARUNITS[v]}]" for v in ROM_VARIABLES}
@@ -139,6 +154,7 @@ ROM_STYLE = dict(linestyle="--",            # Line style for ROM time traces.
 
 # =============================================================================
 # DO NOT MODIFY ===============================================================
+
 
 def _makefolder(*args):
     """Join arguments into a path to a folder. If the folder doesn't exist,
@@ -233,8 +249,8 @@ def rom_snapshot_path(trainsize, num_modes, regs):
     derived from a ROM trained with `trainsize` snapshots, `num_modes` POD
     modes, and regularization parameters of `regs`, for use with Tecplot.
     """
-    return _makefolder(tecplot_path(),
-                     f"{TRNFMT(trainsize)}_{DIMFMT(num_modes)}_{REGFMT(regs)}")
+    filename = f"{TRNFMT(trainsize)}_{DIMFMT(num_modes)}_{REGFMT(regs)}"
+    return _makefolder(tecplot_path(), filename)
 
 
 # Validation ------------------------------------------------------------------
