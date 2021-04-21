@@ -173,7 +173,7 @@ def get_feature(key, data, V=None, qbar=None, scales=None):
         data_scaled = (dproc.getvar(var, V) @ data) + dproc.getvar(var, qbar)
         variable = dproc.unscale(data_scaled, scales, var)
     else:
-        variable = dproc.getvar(var, data)
+        variable = dproc.getvar(var, data)          # noqa
     return eval(f"variable.{action}(axis=0)")
 
 
