@@ -15,9 +15,9 @@ import step4_plot as step4
 import data_processing as dproc
 
 
-LABELSIZE=18
-TITLESIZE=16
-TICKSIZE=14
+LABELSIZE = 18
+TITLESIZE = 16
+TICKSIZE = 14
 
 
 # Operator Inference posterior samplers =======================================
@@ -65,12 +65,12 @@ class OpInfPosterior:
     def _sample_operator_matrix(self):
         """Sample an operator matrix from the posterior distribution."""
         rows = [µ + cho @ np.random.standard_normal(self._d)
-                                for µ, cho in zip(self.means, self._chos)]
+                for µ, cho in zip(self.means, self._chos)]
         return np.vstack(rows)
 
-    def _construct_rom(self, O):
+    def _construct_rom(self, Ohat):
         """Construct the ROM from the operator matrix."""
-        c_, A_, H_, B_ = np.split(O, self._indices, axis=1)
+        c_, A_, H_, B_ = np.split(Ohat, self._indices, axis=1)
         rom = roi.InferredContinuousROM(self._modelform)
         return rom.set_operators(None, c_=c_.flatten(), A_=A_, H_=H_, B_=B_)
 
@@ -202,8 +202,8 @@ def construct_posterior(trainsize, r, reg, case=2):
     with utils.timed_block("Building posterior distribution"):
         # Precompute some quantities for posterior parameters.
         DTD = symmetrize(D.T @ D)
-        Onorm2s = np.sum(O**2, axis=1)                  # ||o_i||^2.
-        residual2s = np.sum((D @ O.T - R.T)**2, axis=0) # ||Do_i - r_i||^2.
+        Onorm2s = np.sum(O**2, axis=1)                   # ||o_i||^2.
+        residual2s = np.sum((D @ O.T - R.T)**2, axis=0)  # ||Do_i - r_i||^2.
 
         # print("||o_i||^2:", Onorm2s)
         # print(f"{Onorm2s.mean()} ± {Onorm2s.std()}")
@@ -219,7 +219,7 @@ def construct_posterior(trainsize, r, reg, case=2):
             σ2s = (residual2s + λ2*Onorm2s) / trainsize
             post = OpInfPosteriorUniformCov(O, np.sqrt(σ2s), Σ, "cAHB")
             if case == 1:
-                Σs = np.array([σ2i * Σ for σ2i in σ2s]) # = post.covariances
+                Σs = np.array([σ2i * Σ for σ2i in σ2s])  # = post.covariances
         else:
             if reg.shape == (d,):
                 # TODO: this is Gamma_{i} = Gamma_{fixed},
@@ -228,8 +228,8 @@ def construct_posterior(trainsize, r, reg, case=2):
                 reg = np.tile(reg, (r,1))
             λ2 = np.array(reg)**2
             if λ2.shape == (r,):
-                I = np.eye(d)
-                Λs = [λ2i*I for λ2i in λ2]
+                Id = np.eye(d)
+                Λs = [λ2i*Id for λ2i in λ2]
                 σ2s = (residual2s + λ2*Onorm2s) / trainsize
             elif λ2.shape == (r,d):
                 if case not in (-1, 1):
@@ -240,7 +240,7 @@ def construct_posterior(trainsize, r, reg, case=2):
                 raise ValueError("invalid shape(reg)")
             assert len(Λs) == len(σ2s) == r
             Σs = np.array([σ2i * symmetrize(la.inv(DTD + Λi), sparsify=True)
-                                                for σ2i, Λi in zip(σ2s, Λs)])
+                           for σ2i, Λi in zip(σ2s, Λs)])
             post = None
             post = OpInfPosterior(O, Σs, modelform="cAHB")
 
@@ -277,7 +277,7 @@ def construct_posterior(trainsize, r, reg, case=2):
             pairs = np.array(pairs)
             bad = (pairs[:,0] > pairs[:,1])
             plt.plot(pairs[~bad,0], pairs[~bad,1], 'C0.', ms=2, alpha=.2)
-            plt.plot(pairs[ bad,0], pairs[ bad,1], 'C3.', ms=2, alpha=.2)
+            plt.plot(pairs[bad,0], pairs[bad,1], 'C3.', ms=2, alpha=.2)
             plt.show()
 
         else:
@@ -315,7 +315,7 @@ def simulate_posterior(trainsize, post, ndraws=10, steps=None):
     q0 = utils.load_projected_data(trainsize, post._r)[0][:,0]
 
     # Simulate the mean ROM as a reference.
-    with utils.timed_block(f"Simulating mean ROM"):
+    with utils.timed_block("Simulating mean ROM"):
         q_rom_mean = post.mean_rom.predict(q0, t, config.U, method="RK45")
 
     # Get `ndraws` simulation samples.
@@ -351,8 +351,9 @@ def plot_mode_uncertainty(trainsize, mean, draws, modes=4):
         # for draw in draws:
         #     ax.plot(t, draw[i,:], 'C0-', lw=.5, alpha=.2)
         if len(draws) > 0:
-            ax.fill_between(t, mean[i,:] - 3*deviations[i,:],
-                               mean[i,:] + 3*deviations[i,:],
+            ax.fill_between(t,
+                            mean[i,:] - 3*deviations[i,:],
+                            mean[i,:] + 3*deviations[i,:],
                             alpha=.5, label=r"$\mu \pm 3\sigma$")
         if steps > trainsize:
             ax.axvline(t[trainsize], color='k', lw=1)
@@ -419,8 +420,9 @@ def plot_pointtrace_uncertainty(trainsize, mean, draws, var="p"):
                 label=r"OpInf ROM ($\mu$)")
         # for draw in traces_rom_draws:
         #     ax.plot(t, draw[i,:], 'C0-', lw=.5, alpha=.25)
-        ax.fill_between(t, traces_rom_mean[i,:] - 3*deviations[i,:],
-                           traces_rom_mean[i,:] + 3*deviations[i,:],
+        ax.fill_between(t,
+                        traces_rom_mean[i,:] - 3*deviations[i,:],
+                        traces_rom_mean[i,:] + 3*deviations[i,:],
                         alpha=.5, label=r"OpInf ROM ($\mu \pm 3\sigma$)")
         ax.axvline(t[trainsize], color='k', lw=1)
         ax.set_xlim(t[0], t[-1])
@@ -482,8 +484,9 @@ def plot_speciesintegral_uncertainty(trainsize, mean, draws):
         ax.plot(t, integral_rom_mean, 'C0--', lw=1, label=r"OpInf ROM ($\mu$)")
         # for draw in integral_rom_draws:
         #     ax.plot(t, draw[i,:], 'C0-', lw=.5, alpha=.25)
-        ax.fill_between(t, integral_rom_mean - 3*deviation,
-                           integral_rom_mean + 3*deviation,
+        ax.fill_between(t,
+                        integral_rom_mean - 3*deviation,
+                        integral_rom_mean + 3*deviation,
                         alpha=.5, label=r"OpInf ROM ($\mu \pm 3\sigma$)")
         ax.axvline(t[trainsize], color='k', lw=1)
         ax.set_xlim(t[0], t[-1])
