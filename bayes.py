@@ -337,7 +337,7 @@ def simulate_posterior(trainsize, post, ndraws=10, steps=None):
 
 # Main routines ===============================================================
 
-def plot_mode_uncertainty(trainsize, mean, draws, modes=8):
+def plot_mode_uncertainty(trainsize, mean, draws, modes=4):
     steps = mean.shape[1]
     t = utils.load_time_domain(steps)
 
@@ -345,7 +345,7 @@ def plot_mode_uncertainty(trainsize, mean, draws, modes=8):
         with utils.timed_block("Calculating sample deviations"):
             deviations = np.std(draws, axis=0)
 
-    fig, axes = plt.subplots(modes, 1, figsize=(8,9))
+    fig, axes = plt.subplots(modes//2, 2, figsize=(12,5), sharex=True)
     for i, ax in zip(range(modes), axes.flat):
         ax.plot(t, mean[i,:], 'C0-', lw=1, label=r"$\mu$")
         # for draw in draws:
@@ -356,19 +356,24 @@ def plot_mode_uncertainty(trainsize, mean, draws, modes=8):
                             alpha=.5, label=r"$\mu \pm 3\sigma$")
         if steps > trainsize:
             ax.axvline(t[trainsize], color='k', lw=1)
-        ax.set_ylabel(fr"$q_{{{i+1}}}(t)$", fontsize=LABELSIZE)
+        ax.set_ylabel(fr"$\hat{{q}}_{{{i+1}}}(t)$", fontsize=LABELSIZE)
         ax.set_xlim(t[0], t[-1])
         ax.set_xticks(np.arange(t[0], t[-1]+.001, .001))
         ax.tick_params(axis="both", which="major", labelsize=TICKSIZE)
+    for ax in axes[-1]:
+        ax.set_xlabel(r"Time [s]", fontsize=LABELSIZE)
 
     # Single legend below the subplots.
     fig.tight_layout(rect=[0, .05, 1, 1])
-    fig.subplots_adjust(hspace=.2)
-    leg = axes[0].legend(loc="lower center", fontsize=LABELSIZE, ncol=2,
-                         bbox_to_anchor=(.5,0),
-                         bbox_transform=fig.transFigure)
+    fig.subplots_adjust(hspace=.2, wspace=.2)
+    leg = axes[0,0].legend(loc="lower center", fontsize=LABELSIZE, ncol=2,
+                           bbox_to_anchor=(.5,0),
+                           bbox_transform=fig.transFigure)
     for line in leg.get_lines():
         line.set_linewidth(2)
+
+    for j in range(axes.shape[1]):
+        fig.align_ylabels(axes[:,j])
 
 
 def plot_pointtrace_uncertainty(trainsize, mean, draws, var="p"):
@@ -407,7 +412,7 @@ def plot_pointtrace_uncertainty(trainsize, mean, draws, var="p"):
     with utils.timed_block("Calculating sample deviations"):
         deviations = np.std(traces_rom_draws, axis=0)
 
-    fig, axes = plt.subplots(nelems, 1, figsize=(9,9), sharex=True)
+    fig, axes = plt.subplots(nelems//2, 2, figsize=(12,5), sharex=True)
     for i, ax in enumerate(axes.flat):
         ax.plot(t, traces_gems[i,:], lw=1, **config.GEMS_STYLE)
         ax.plot(t, traces_rom_mean[i,:], 'C0--', lw=1,
@@ -425,7 +430,8 @@ def plot_pointtrace_uncertainty(trainsize, mean, draws, var="p"):
         ax.locator_params(axis='y', nbins=2)
 
     # Time label below lowest axis.
-    axes[-1].set_xlabel("Time [s]", fontsize=LABELSIZE)
+    for ax in axes[-1]:
+        ax.set_xlabel("Time [s]", fontsize=LABELSIZE)
 
     # Single variable label on the left.
     ax_invis = fig.add_subplot(1, 1, 1, frameon=False)
@@ -434,10 +440,10 @@ def plot_pointtrace_uncertainty(trainsize, mean, draws, var="p"):
 
     # Single legend below the subplots.
     fig.tight_layout(rect=[0, .05, 1, 1])
-    fig.subplots_adjust(hspace=.2)
-    leg = axes[0].legend(loc="lower center", fontsize=LABELSIZE, ncol=3,
-                         bbox_to_anchor=(.525,0),
-                         bbox_transform=fig.transFigure)
+    fig.subplots_adjust(hspace=.25, wspace=.15)
+    leg = axes[0,0].legend(loc="lower center", fontsize=LABELSIZE, ncol=3,
+                           bbox_to_anchor=(.525,0),
+                           bbox_transform=fig.transFigure)
     for line in leg.get_lines():
         line.set_linewidth(2)
 

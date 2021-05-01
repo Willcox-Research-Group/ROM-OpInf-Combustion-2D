@@ -271,11 +271,15 @@ def load_basis(trainsize, r):
             rmax = hf["basis"].shape[1]
             if r is not None and rmax < r:
                 raise ValueError(f"basis only has {rmax} columns")
-            if hf["mean"].shape != (hf["basis"].shape[0],):
-                raise RuntimeError("basis and mean snapshot not aligned!")
+            # TODO: UPDATE BAYES WITH MEAN SHIFT
+            if "mean" in hf:
+                if hf["mean"].shape != (hf["basis"].shape[0],):
+                    raise RuntimeError("basis and mean snapshot not aligned!")
 
-            # Load the data.
-            return hf["basis"][:,:r], hf["mean"][:], hf["scales"][:]
+                # Load the data.
+                return hf["basis"][:,:r], hf["mean"][:], hf["scales"][:]
+            else:
+                return hf["basis"][:,:r], hf["scales"][:]
 
 
 def load_projected_data(trainsize, r):
