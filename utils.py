@@ -336,9 +336,9 @@ def load_rom(trainsize, r, regs):
         Dimension of the ROM. Also the number of retained POD modes (left
         singular vectors) used to project the training data.
 
-    regs : two positive floats
-        Regularization parameters used in the Operator Inference least-squares
-        problem for training the ROM.
+    regs : one, two, or three positive floats
+        Regularization hyperparameters used in the Operator Inference
+        least-squares problem for training the ROM.
 
     Returns
     -------
@@ -353,13 +353,13 @@ def load_rom(trainsize, r, regs):
         rom = roi.load_model(data_path)
     except FileNotFoundError as e:
         raise DataNotFoundError(f"could not locate ROM with {trainsize:d} "
-                                f"training snapshots, r={r:d}, "
-                                f"and λ1={regs[0]:e}, λ2={regs[1]:e}") from e
+                                f"training snapshots, r={r:d}, and "
+                                f"{config.REGSTR(regs)}") from e
     # Check ROM dimension.
     if rom.r != r:
         raise RuntimeError(f"rom.r = {rom.r} != {r}")
 
-    rom.trainsize, rom.λ1, rom.λ2 = trainsize, regs[0], regs[1]
+    rom.trainsize, rom.regs = trainsize, regs
     return rom
 
 
