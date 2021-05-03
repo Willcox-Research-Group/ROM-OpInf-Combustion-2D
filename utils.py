@@ -9,12 +9,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 try:
-    import rom_operator_inference as roi
+    import rom_operator_inference as opinf
 except ModuleNotFoundError:
     print("\nrom_operator_inference module not installed",
           "(python3 -m pip install --user -r requirements.txt)\n")
     raise
-if roi.__version__ != "1.2.1":
+if opinf.__version__ != "1.2.1":
     raise ModuleNotFoundError("rom-operator-inference version 1.2.1 required "
                               "(python3 -m pip install --user "
                               "-r requirements.txt)")
@@ -342,7 +342,7 @@ def load_rom(trainsize, r, regs):
 
     Returns
     -------
-    rom : roi.InferredContinuousROM
+    rom : opinf.InferredContinuousROM
         The trained reduced-order model.
     """
     # Locate the data.
@@ -350,7 +350,7 @@ def load_rom(trainsize, r, regs):
 
     # Extract the trained ROM.
     try:
-        rom = roi.load_model(data_path)
+        rom = opinf.load_model(data_path)
     except FileNotFoundError as e:
         raise DataNotFoundError(f"could not locate ROM with {trainsize:d} "
                                 f"training snapshots, r={r:d}, and "
