@@ -49,7 +49,7 @@ import itertools
 import numpy as np
 import scipy.optimize as opt
 
-import rom_operator_inference as roi
+import rom_operator_inference as opinf
 
 import config
 import utils
@@ -60,13 +60,13 @@ _MAXFUN = 100               # Artificial ceiling for optimization routine.
 
 # Subroutines =================================================================
 
-def check_lstsq_size(trainsize, r):
+def check_lstsq_size(trainsize, r, modelform="cAHB"):
     """Report the number of unknowns in the Operator Inference problem,
     compared to the number of snapshots. Ask user for confirmation before
     attempting to solve an underdetermined problem.
     """
     # Print info on the size of the system to be solved.
-    d = roi.lstsq.lstsq_size(config.MODELFORM, r, m=1)
+    d = opinf.lstsq.lstsq_size(modelform, r, m=1)
     message = f"{trainsize} snapshots, {r}x{d} DOFs ({r*d} total)"
     print(message)
     logging.info(message)
@@ -77,44 +77,69 @@ def check_lstsq_size(trainsize, r):
         logging.warning(message)
         if input(f"{message}! CONTINUE? [y/n] ") != "y":
             raise ValueError(message)
-    return d
 
 
-def check_regs(regs):
-    """Assure that there are two positive regularization parameters."""
-    if np.isscalar(regs) or len(regs) != 2:
-        raise ValueError("two regularization parmameters required")
+def check_regs(regs, num=2):
+    """Assure there are the correct number of non-negative regularization
+    hyperparameters.
+
+    Parameters
+    ----------
+    regs : float > 0 or (num,) ndarray
+        Regularization hyperparameters. Must be non-negative.
+
+    num : int
+        Number of expected regularization hyperparameters.
+    """
+    if np.isscalar(regs):
+        regs = [regs]
+
+    # Check number of values.
+    nregs = len(regs)
+    if nregs != num:
+        raise ValueError(f"expected {num} hyperparameters, got {nregs}")
+
+    # Check non-negativity.
     if any(λ < 0 for λ in regs):
-        raise ValueError("regularization parameters must be positive")
+        raise ValueError("regularization hyperparameters must be non-negative")
+
     return regs
 
 
-def regularizer(r, d, λ1, λ2):
+def regularizer(r, λ1, λ2, λ3=None):
     """Return the regularizer that penalizes all operator elements by λ1,
     except for the quadratic operator elements, which are penalized by λ2.
+    If λ3 is given, the entries of the cubic operator are penalized by λ3.
 
     Parameters
     ----------
     r : int
         Dimension of the ROM.
 
-    d : int
-        Number of unknowns in a single least-squares problem, i.e., the
-        number of elements in a single row of the operator matrix O.
-
     λ1 : float
-        Regularization parameter for the non-quadratic operators.
+        Regularization hyperparameter for the non-quadratic operators.
 
     λ2 : float
-        Regularization parameter for the quadratic operator.
+        Regularization hyperparameter for the quadratic operator.
+
+    λ2 : float or None
+        Regularization hyperparameter for the cubic operator (if present).
 
     Returns
     -------
     diag(𝚪) : (d,) ndarray
         Diagonal entries of the dxd regularizer 𝚪.
     """
-    diag𝚪 = np.full(d, λ1)
-    diag𝚪[1+r:-1] = λ2
+    r1 = 1 + r
+    r2 = r1 + r*(r + 1)//2
+    if λ3 is None:
+        diag𝚪 = np.full(r2+1, λ1)
+        diag𝚪[r1:-1] = λ2
+    else:
+        r3 = r2 + r*(r + 1)*(r + 2)//6
+        diag𝚪 = np.full(r3+1, λ1)
+        diag𝚪[r1:r2] = λ2
+        diag𝚪[r2:-1] = λ3
     return diag𝚪
 
 
@@ -149,7 +174,7 @@ def save_trained_rom(trainsize, r, regs, rom):
         Dimension of the ROM. Also the number of retained POD modes
         (left singular vectors) used to project the training data.
 
-    regs : two positive floats
+    regs : two or three positive floats
         Regularization parameters (non-quadratic, quadratic) used in the
         Operator Inference least-squares problem for training the ROM.
 
@@ -183,7 +208,7 @@ def train_single(trainsize, r, regs):
     utils.reset_logger(trainsize)
 
     # Validate inputs.
-    d = check_lstsq_size(trainsize, r)
+    check_lstsq_size(trainsize, r, modelform="cAHB")
     λ1, λ2 = check_regs(regs)
 
     # Load training data.
@@ -193,8 +218,8 @@ def train_single(trainsize, r, regs):
     # Train and save the ROM.
     with utils.timed_block(f"Training ROM with k={trainsize:d}, "
                            f"r={r:d}, λ1={λ1:.0f}, λ2={λ2:.0f}"):
-        rom = roi.InferredContinuousROM(config.MODELFORM)
-        rom.fit(None, Q_, Qdot_, U, P=regularizer(r, d, λ1, λ2))
+        rom = opinf.InferredContinuousROM("cAHB")
+        rom.fit(None, Q_, Qdot_, U, P=regularizer(r, λ1, λ2))
         save_trained_rom(trainsize, r, regs, rom)
 
 
@@ -228,7 +253,7 @@ def train_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     utils.reset_logger(trainsize)
 
     # Parse aguments.
-    d = check_lstsq_size(trainsize, r)
+    d = check_lstsq_size(trainsize, r, modelform="cAHB")
     if len(regs) != 6:
         raise ValueError("len(regs) != 6 (bounds / sizes for parameter grid")
     check_regs(regs[0:2])
@@ -247,7 +272,7 @@ def train_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     # Create a solver mapping regularization parameters to operators.
     print(f"TRAINING {λ1grid.size*λ2grid.size} ROMS")
     with utils.timed_block(f"Constructing least-squares solver, r={r:d}"):
-        rom = roi.InferredContinuousROM(config.MODELFORM)
+        rom = opinf.InferredContinuousROM("cAHB")
         rom._construct_solver(None, Q_, Qdot_, U, np.ones(d))
 
     # Test each regularization parameter.
@@ -256,7 +281,7 @@ def train_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     for λ1,λ2 in itertools.product(λ1grid, λ2grid):
         with utils.timed_block(f"Testing ROM with λ1={λ1:5e}, λ2={λ2:5e}"):
             # Train the ROM on all training snapshots.
-            rom._evaluate_solver(regularizer(r, d, λ1, λ2))
+            rom._evaluate_solver(regularizer(r, λ1, λ2))
 
             # Simulate the ROM over the full domain.
             with np.warnings.catch_warnings():
@@ -268,9 +293,9 @@ def train_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
 
             # Calculate integrated relative errors in the reduced space.
             if q_rom.shape[1] > trainsize:
-                errors[(λ1,λ2)] = roi.post.Lp_error(Q_,
-                                                    q_rom[:,:trainsize],
-                                                    t[:trainsize])[1]
+                errors[(λ1,λ2)] = opinf.post.Lp_error(Q_,
+                                                      q_rom[:,:trainsize],
+                                                      t[:trainsize])[1]
 
     # Choose and save the ROM with the least error.
     if not errors_pass:
@@ -283,7 +308,7 @@ def train_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     λ1,λ2 = err2reg[min(err2reg.keys())]
     with utils.timed_block(f"Best regularization for k={trainsize:d}, "
                            f"r={r:d}: λ1={λ1:.0f}, λ2={λ2:.0f}"):
-        rom._evaluate_solver(regularizer(r, d, λ1, λ2))
+        rom._evaluate_solver(regularizer(r, λ1, λ2))
         save_trained_rom(trainsize, r, (λ1,λ2), rom)
 
 
@@ -318,7 +343,7 @@ def train_minimize(trainsize, r, regs, testsize=None, margin=1.5):
     utils.reset_logger(trainsize)
 
     # Parse aguments.
-    d = check_lstsq_size(trainsize, r)
+    d = check_lstsq_size(trainsize, r, modelform="cAHB")
     log10regs = np.log10(check_regs(regs))
 
     # Load training data.
@@ -331,7 +356,7 @@ def train_minimize(trainsize, r, regs, testsize=None, margin=1.5):
 
     # Create a solver mapping regularization parameters to operators.
     with utils.timed_block(f"Constructing least-squares solver, r={r:d}"):
-        rom = roi.InferredContinuousROM(config.MODELFORM)
+        rom = opinf.InferredContinuousROM("cAHB")
         rom._construct_solver(None, Q_, Qdot_, U, np.ones(d))
 
     # Test each regularization parameter.
@@ -344,7 +369,7 @@ def train_minimize(trainsize, r, regs, testsize=None, margin=1.5):
 
         # Train the ROM on all training snapshots.
         with utils.timed_block(f"Testing ROM with λ1={λ1:e}, λ2={λ2:e}"):
-            rom._evaluate_solver(regularizer(r, d, λ1, λ2))
+            rom._evaluate_solver(regularizer(r, λ1, λ2))
 
             # Simulate the ROM over the full domain.
             with np.warnings.catch_warnings():
@@ -356,15 +381,234 @@ def train_minimize(trainsize, r, regs, testsize=None, margin=1.5):
                 return _MAXFUN
 
             # Calculate integrated relative errors in the reduced space.
-            return roi.post.Lp_error(Q_, q_rom[:,:trainsize], t[:trainsize])[1]
+            return opinf.post.Lp_error(Q_,
+                                       q_rom[:,:trainsize],
+                                       t[:trainsize])[1]
 
     opt_result = opt.minimize(training_error, log10regs, method="Nelder-Mead")
     if opt_result.success and opt_result.fun != _MAXFUN:
         λ1, λ2 = 10**opt_result.x
         with utils.timed_block(f"Best regularization for k={trainsize:d}, "
                                f"r={r:d}: λ1={λ1:.0f}, λ2={λ2:.0f}"):
-            rom._evaluate_solver(regularizer(r, d, λ1, λ2))
+            rom._evaluate_solver(regularizer(r, λ1, λ2))
             save_trained_rom(trainsize, r, (λ1,λ2), rom)
+    else:
+        message = "Regularization search optimization FAILED"
+        print(message)
+        logging.info(message)
+
+
+# CUBIC MODELS ================================================================
+
+def train_single_cubic(trainsize, r, regs):
+    """Train and save a ROM with the given dimension and regularization
+    hyperparameters.
+
+    Parameters
+    ----------
+    trainsize : int
+        Number of snapshots to use to train the ROM.
+
+    r : int
+        Dimension of the desired ROM. Also the number of retained POD modes
+        (left singular vectors) used to project the training data.
+
+    regs : three non-negative floats
+        Regularization hyperparameters (first-order, quadratic, cubic) to use
+        in the Operator Inference least-squares problem for training the ROM.
+    """
+    utils.reset_logger(trainsize)
+
+    # Validate inputs.
+    check_lstsq_size(trainsize, r, modelform="cAHGB")
+    λ1, λ2, λ3 = check_regs(regs)
+
+    # Load training data.
+    Q_, Qdot_, t = utils.load_projected_data(trainsize, r)
+    U = config.U(t)
+
+    # Train and save the ROM.
+    with utils.timed_block(f"Training ROM with k={trainsize:d}, "
+                           f"r={r:d}, λ1={λ1:.0f}, λ2={λ2:.0f}, λ3={λ2:.0f}"):
+        rom = opinf.InferredContinuousROM("cAHGB")
+        rom.fit(None, Q_, Qdot_, U, P=regularizer(r, λ1, λ2, λ3))
+        save_trained_rom(trainsize, r, regs, rom)
+
+
+def train_gridsearch_cubic(trainsize, r, regs, testsize=None, margin=1.5):
+    """Train ROMs with the given dimension over a grid of potential
+    regularization hyperparameters, saving only the ROM with the least
+    training error that satisfies a bound on the integrated POD coefficients.
+
+    Parameters
+    ----------
+    trainsize : int
+        Number of snapshots to use to train the ROM.
+
+    r : int
+        Dimension of the desired ROM. Also the number of retained POD modes
+        (left singular vectors) used to project the training data.
+
+    regs : (float, float, int, float, float, int, float, float, int)
+        Bounds and sizes for the grid of regularization parameters.
+        First-order: search in [regs[0], regs[1]] at regs[2] points.
+        Quadratic:   search in [regs[3], regs[4]] at regs[5] points.
+        Cubic:       search in [regs[6], regs[7]] at regs[8] points.
+
+    testsize : int
+        Number of time steps for which a valid ROM must satisfy the POD bound.
+
+    margin : float >= 1
+        Amount that the integrated POD coefficients of a valid ROM are allowed
+        to deviate in magnitude from the maximum magnitude of the training
+        data Q, i.e., bound = margin * max(abs(Q)).
+    """
+    utils.reset_logger(trainsize)
+
+    # Parse aguments.
+    d = check_lstsq_size(trainsize, r, modelform="cAHGB")
+    if len(regs) != 6:
+        raise ValueError("len(regs) != 6 (bounds / sizes for parameter grid")
+    for i in [0, 3, 6]:
+        check_regs(regs[i:i+2], 2)
+    λ1grid = np.logspace(np.log10(regs[0]), np.log10(regs[1]), int(regs[2]))
+    λ2grid = np.logspace(np.log10(regs[3]), np.log10(regs[4]), int(regs[5]))
+    λ3grid = np.logspace(np.log10(regs[6]), np.log10(regs[7]), int(regs[8]))
+
+    # Load training data.
+    t = utils.load_time_domain(testsize)
+    Q_, Qdot_, _ = utils.load_projected_data(trainsize, r)
+    U = config.U(t[:trainsize])
+
+    # Compute the bound to require for integrated POD modes.
+    M = margin * np.abs(Q_).max()
+
+    # Create a solver mapping regularization parameters to operators.
+    print(f"TRAINING {λ1grid.size*λ2grid.size*λ3grid.size} ROMS")
+    with utils.timed_block(f"Constructing least-squares solver, r={r:d}"):
+        rom = opinf.InferredContinuousROM("cAHGB")
+        rom._construct_solver(None, Q_, Qdot_, U, np.ones(d))
+
+    # Test each regularization parameter.
+    errors_pass = {}
+    errors_fail = {}
+    for λ1,λ2,λ3 in itertools.product(λ1grid, λ2grid, λ3grid):
+        with utils.timed_block("Testing ROM with "
+                               f"λ1={λ1:5e}, λ2={λ2:5e}, λ3={λ3:5e}"):
+            # Train the ROM on all training snapshots.
+            rom._evaluate_solver(regularizer(r, λ1, λ2, λ3))
+
+            # Simulate the ROM over the full domain.
+            with np.warnings.catch_warnings():
+                np.warnings.simplefilter("ignore")
+                q_rom = rom.predict(Q_[:,0], t, config.U, method="RK45")
+
+            # Check for boundedness of solution.
+            errors = errors_pass if is_bounded(q_rom, M) else errors_fail
+
+            # Calculate integrated relative errors in the reduced space.
+            if q_rom.shape[1] > trainsize:
+                errors[(λ1,λ2)] = opinf.post.Lp_error(Q_,
+                                                      q_rom[:,:trainsize],
+                                                      t[:trainsize])[1]
+
+    # Choose and save the ROM with the least error.
+    if not errors_pass:
+        message = f"NO STABLE ROMS for r={r:d}"
+        print(message)
+        logging.info(message)
+        return
+
+    err2reg = {err:reg for reg,err in errors_pass.items()}
+    λ1,λ2,λ3 = err2reg[min(err2reg.keys())]
+    with utils.timed_block(f"Best regularization for k={trainsize:d}, "
+                           f"r={r:d}: λ1={λ1:.0f}, λ2={λ2:.0f}, λ3={λ3:.0f}"):
+        rom._evaluate_solver(regularizer(r, λ1, λ2, λ3))
+        save_trained_rom(trainsize, r, (λ1,λ2,λ3), rom)
+
+
+def train_minimize_cubic(trainsize, r, regs, testsize=None, margin=1.5):
+    """Train ROMs with the given dimension(s), saving only the ROM with
+    the least training error that satisfies a bound on the integrated POD
+    coefficients, using a search algorithm to choose the regularization
+    hyperparameters.
+
+    Parameters
+    ----------
+    trainsize : int
+        Number of snapshots to use to train the ROM.
+
+    r : int
+        Dimension of the desired ROM. Also the number of retained POD modes
+        (left singular vectors) used to project the training data.
+
+    regs : three non-negative floats
+        Initial guesses for the regularization hyperparameters (first-order,
+        quadratic, cubic) to use in the Operator Inference least-squares
+        problem for training the ROM.
+
+    testsize : int
+        Number of time steps for which a valid ROM must satisfy the POD bound.
+
+    margin : float >= 1
+        Amount that the integrated POD coefficients of a valid ROM are allowed
+        to deviate in magnitude from the maximum magnitude of the training
+        data Q, i.e., bound = margin * max(abs(Q)).
+    """
+    utils.reset_logger(trainsize)
+
+    # Parse aguments.
+    d = check_lstsq_size(trainsize, r, modelform="cAHGB")
+    log10regs = np.log10(check_regs(regs, 3))
+
+    # Load training data.
+    t = utils.load_time_domain(testsize)
+    Q_, Qdot_, _ = utils.load_projected_data(trainsize, r)
+    U = config.U(t[:trainsize])
+
+    # Compute the bound to require for integrated POD modes.
+    B = margin * np.abs(Q_).max()
+
+    # Create a solver mapping regularization parameters to operators.
+    with utils.timed_block(f"Constructing least-squares solver, r={r:d}"):
+        rom = opinf.InferredContinuousROM("cAHGB")
+        rom._construct_solver(None, Q_, Qdot_, U, np.ones(d))
+
+    # Test each regularization parameter.
+    def training_error(log10regs):
+        """Return the training error resulting from the regularization
+        parameters λ1 = 10^log10regs[0], λ1 = 10^log10regs[1]. If the
+        resulting model violates the POD bound, return "infinity".
+        """
+        λ1, λ2, λ3 = 10**log10regs
+
+        # Train the ROM on all training snapshots.
+        with utils.timed_block("Testing ROM with "
+                               f"λ1={λ1:e}, λ2={λ2:e}, λ3={λ3:e}"):
+            rom._evaluate_solver(regularizer(r, λ1, λ2, λ3))
+
+            # Simulate the ROM over the full domain.
+            with np.warnings.catch_warnings():
+                np.warnings.simplefilter("ignore")
+                q_rom = rom.predict(Q_[:,0], t, config.U, method="RK45")
+
+            # Check for boundedness of solution.
+            if not is_bounded(q_rom, B):
+                return _MAXFUN
+
+            # Calculate integrated relative errors in the reduced space.
+            return opinf.post.Lp_error(Q_,
+                                       q_rom[:,:trainsize],
+                                       t[:trainsize])[1]
+
+    opt_result = opt.minimize(training_error, log10regs, method="Nelder-Mead")
+    if opt_result.success and opt_result.fun != _MAXFUN:
+        λ1, λ2, λ3 = 10**opt_result.x
+        with utils.timed_block(f"Best regularization for k={trainsize:d}, "
+                               f"r={r:d}: λ1={λ1:.0f}, "
+                               f"λ2={λ2:.0f}, λ3={λ3:.0f}"):
+            rom._evaluate_solver(regularizer(r, λ1, λ2, λ3))
+            save_trained_rom(trainsize, r, (λ1,λ2,λ3), rom)
     else:
         message = "Regularization search optimization FAILED"
         print(message)
@@ -403,7 +647,7 @@ def _train_minimize_1D(trainsize, r, regs, testsize=None, margin=1.5):
     utils.reset_logger(trainsize)
 
     # Parse aguments.
-    check_lstsq_size(trainsize, r)
+    check_lstsq_size(trainsize, r, modelform="cAHB")
     log10regs = np.log10(check_regs(regs))
 
     # Load training data.
@@ -416,7 +660,7 @@ def _train_minimize_1D(trainsize, r, regs, testsize=None, margin=1.5):
 
     # Create a solver mapping regularization parameters to operators.
     with utils.timed_block(f"Constructing least-squares solver, r={r:d}"):
-        rom = roi.InferredContinuousROM(config.MODELFORM)
+        rom = opinf.InferredContinuousROM("cAHB")
         rom._construct_solver(None, Q_, Qdot_, U, 1)
 
     # Test each regularization parameter.
@@ -441,7 +685,9 @@ def _train_minimize_1D(trainsize, r, regs, testsize=None, margin=1.5):
                 return _MAXFUN
 
             # Calculate integrated relative errors in the reduced space.
-            return roi.post.Lp_error(Q_, q_rom[:,:trainsize], t[:trainsize])[1]
+            return opinf.post.Lp_error(Q_,
+                                       q_rom[:,:trainsize],
+                                       t[:trainsize])[1]
 
     opt_result = opt.minimize_scalar(training_error,
                                      method="bounded", bounds=log10regs)
