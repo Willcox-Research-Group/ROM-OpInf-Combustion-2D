@@ -60,7 +60,7 @@ def simulate_rom(trainsize, r, regs, steps=None):
     r : int
         Dimension of the ROM.
 
-    regs : two positive floats
+    regs : two or three positive floats
         Regularization hyperparameters used to train the ROM.
 
     steps : int or None
@@ -90,11 +90,10 @@ def simulate_rom(trainsize, r, regs, steps=None):
     V, qbar, scales = utils.load_basis(trainsize, r)
     Q_, _, _ = utils.load_projected_data(trainsize, r)
     rom = utils.load_rom(trainsize, r, regs)
-    λ1, λ2 = regs
 
     # Simulate the ROM over the full time domain.
     with utils.timed_block(f"Simulating ROM with k={trainsize:d}, r={r:d}, "
-                           f"λ1={λ1:.0f}, λ2={λ2:.0f} over full time domain"):
+                           f"{config.REGSTR(regs)} over full time domain"):
         q_rom = rom.predict(Q_[:,0], t, config.U, method="RK45")
 
     return t, V, qbar, scales, q_rom
@@ -192,7 +191,7 @@ def point_traces(trainsize, r, regs, elems, cutoff=60000):
     r : int
         Dimension of the ROM.
 
-    regs : two positive floats
+    regs : two or three positive floats
         Regularization hyperparameters used to train the ROM.
 
     elems : list(int) or ndarray(int)
@@ -253,10 +252,7 @@ def point_traces(trainsize, r, regs, elems, cutoff=60000):
             line.set_linewidth(2)
 
         # Save the figure.
-        utils.save_figure("pointtrace"
-                          f"_{config.TRNFMT(trainsize)}"
-                          f"_{config.DIMFMT(r)}"
-                          f"_{config.REGFMT(regs)}_{var}.pdf")
+        utils.save_figure(f"pointtrace_{var}.pdf")
 
 
 def errors_in_time(trainsize, r, regs, cutoff=60000):
@@ -270,7 +266,7 @@ def errors_in_time(trainsize, r, regs, cutoff=60000):
     r : int
         Dimension of the ROM.
 
-    regs : two positive floats
+    regs : two or three positive floats
         Regularization hyperparameters used to train the ROM.
 
     cutoff : int
@@ -334,10 +330,7 @@ def errors_in_time(trainsize, r, regs, cutoff=60000):
         line.set_linewidth(5)
 
     # Save the figure.
-    utils.save_figure(f"errors"
-                      f"_{config.TRNFMT(trainsize)}"
-                      f"_{config.DIMFMT(r)}"
-                      f"_{config.REGFMT(regs)}.pdf")
+    utils.save_figure("errors.pdf")
 
 
 def save_statistical_features():
@@ -397,7 +390,7 @@ def spatial_statistics(trainsize, r, regs):
     r : int
         Dimension of the ROM.
 
-    regs : two positive floats
+    regs : two or three positive floats
         Regularization hyperparameters used to train the ROM.
     """
     # Load the true results.
@@ -439,10 +432,7 @@ def spatial_statistics(trainsize, r, regs):
     for line in leg.get_lines():
         line.set_linewidth(2)
 
-    utils.save_figure(f"statfeatures"
-                      f"_{config.TRNFMT(trainsize)}"
-                      f"_{config.DIMFMT(r)}"
-                      f"_{config.REGFMT(regs)}.pdf")
+    utils.save_figure("statfeatures.pdf")
 
 
 # Main routine ================================================================
@@ -504,7 +494,7 @@ if __name__ == "__main__":
     parser.add_argument("modes", type=int,
                         help="number of POD modes used to project the data"
                              " (dimension of the learned ROM)")
-    parser.add_argument("regularization", type=float, nargs=2,
+    parser.add_argument("regularization", type=float, nargs='+',
                         help="regularization hyperparameters used in the "
                              "Operator Inference problem for learning the ROM")
 

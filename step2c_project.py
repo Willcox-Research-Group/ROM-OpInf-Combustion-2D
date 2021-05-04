@@ -25,7 +25,7 @@ import h5py
 import logging
 import numpy as np
 
-import rom_operator_inference as roi
+import rom_operator_inference as opinf
 
 import config
 import utils
@@ -72,7 +72,7 @@ def project_and_save_data(Q, t, V):
     # Compute time derivative data.
     with utils.timed_block("Approximating time derivatives "
                            "of projected snapshots"):
-        Qdot_ = roi.pre.xdot_uniform(Q_, dt, order=4)
+        Qdot_ = opinf.pre.xdot_uniform(Q_, dt, order=4)
 
     # Save the projected training data.
     save_path = config.projected_data_path(Q.shape[1])

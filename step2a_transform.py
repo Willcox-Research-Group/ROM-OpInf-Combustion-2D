@@ -54,7 +54,7 @@ def load_and_lift_gems_data(trainsize):
     return lifted_data, time_domain
 
 
-def scale_and_save_data(trainsize, lifted_data, time_domain):
+def scale_and_save_data(trainsize, lifted_data, time_domain, center=False):
     """Scale lifted snapshots (by variable) and save the scaled snapshots.
 
     Parameters
@@ -68,13 +68,17 @@ def scale_and_save_data(trainsize, lifted_data, time_domain):
     time_domain : (k>trainsize,) ndarray
         The time domain corresponding to the lifted snapshots.
 
+    center : bool
+        If True, center the scaled snapshots by the mean scaled snapshot
+        before computing the POD basis. Default False (no shift).
+
     Returns
     -------
     training_data : (NUM_ROMVARS*DOF, trainsize) ndarray
         Scaled, shifted snapshots to use as training data for the basis.
 
     qbar : (NUM_ROMVARS*DOF,) ndarray
-        Mean snapshot of the scaled training data.
+        Mean snapshot of the scaled training data. All zeros if center=False.
 
     scales : (NUM_ROMVARS,2) ndarray
         Info on how the snapshot data was scaled.
@@ -84,9 +88,12 @@ def scale_and_save_data(trainsize, lifted_data, time_domain):
         training_data, scales = dproc.scale(lifted_data[:,:trainsize].copy())
 
     # Shift the scaled data by the mean snapshot.
-    with utils.timed_block(f"Shifting {trainsize:d} scaled snapshots by mean"):
-        qbar = np.mean(training_data, axis=1)       # Compute mean snapshot.
-        training_data -= qbar.reshape((-1,1))       # Shift columns by mean.
+    if center:
+        with utils.timed_block("Shifting scaled snapshots by mean"):
+            qbar = np.mean(training_data, axis=1)   # Compute mean snapshot.
+            training_data -= qbar.reshape((-1,1))   # Shift columns by mean.
+    else:
+        qbar = np.zeros(training_data.shape[0])
 
     # Save the lifted, scaled training data.
     save_path = config.scaled_data_path(trainsize)
@@ -101,13 +108,17 @@ def scale_and_save_data(trainsize, lifted_data, time_domain):
     return training_data, qbar, scales
 
 
-def main(trainsizes):
+def main(trainsizes, center=False):
     """Lift and scale the GEMS simulation training data and save the results.
 
     Parameters
     ----------
     trainsizes : int or list(int)
         Number of snapshots to lift, scale, and save.
+
+    center : bool
+        If True, center the scaled snapshots by the mean scaled snapshot
+        before computing the POD basis.
     """
     utils.reset_logger()
 
@@ -120,7 +131,7 @@ def main(trainsizes):
     # Scale and save each subset of lifted data.
     for trainsize in trainsizes:
         utils.reset_logger(trainsize)
-        scale_and_save_data(trainsize, lifted_data, time_domain)
+        scale_and_save_data(trainsize, lifted_data, time_domain, center)
 
 
 # =============================================================================
@@ -130,10 +141,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} --help
-        python3 {__file__} TRAINSIZE [...]"""
+        python3 {__file__} TRAINSIZE [...] [--center]"""
     parser.add_argument("trainsize", type=int, nargs='+',
                         help="number of snapshots to lift, scale, and save")
+    parser.add_argument("--center", action="store_true",
+                        help="shift by the mean snapshot after scaling")
 
     # Do the main routine.
     args = parser.parse_args()
-    main(args.trainsize)
+    main(args.trainsize, center=args.center)

@@ -9,12 +9,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 try:
-    import rom_operator_inference as roi
+    import rom_operator_inference as opinf
 except ModuleNotFoundError:
     print("\nrom_operator_inference module not installed",
           "(python3 -m pip install --user -r requirements.txt)\n")
     raise
-if roi.__version__ != "1.2.1":
+if opinf.__version__ != "1.2.1":
     raise ModuleNotFoundError("rom-operator-inference version 1.2.1 required "
                               "(python3 -m pip install --user "
                               "-r requirements.txt)")
@@ -221,14 +221,18 @@ def load_scaled_data(trainsize):
                 raise RuntimeError("data set 'data' has incorrect shape")
             if hf["time"].shape != (trainsize,):
                 raise RuntimeError("data set 'time' has incorrect shape")
-            if hf["mean"].shape != (hf["data"].shape[0],):
-                raise RuntimeError("data set 'mean' has incorrect shape")
+            if "mean" in hf:
+                if hf["mean"].shape != (hf["data"].shape[0],):
+                    raise RuntimeError("data set 'mean' has incorrect shape")
+                mean = hf["mean"][:]
+            else:
+                mean = np.zeros(hf["data"].shape[0])
             if hf["scales"].shape != (config.NUM_ROMVARS, 2):
                 raise RuntimeError("data set 'scales' has incorrect shape")
 
             # Load and return the data.
             return (hf["data"][:,:], hf["time"][:],
-                    hf["mean"][:], hf["scales"][:,:])
+                    mean, hf["scales"][:,:])
 
 
 def load_basis(trainsize, r):
@@ -271,11 +275,15 @@ def load_basis(trainsize, r):
             rmax = hf["basis"].shape[1]
             if r is not None and rmax < r:
                 raise ValueError(f"basis only has {rmax} columns")
-            if hf["mean"].shape != (hf["basis"].shape[0],):
-                raise RuntimeError("basis and mean snapshot not aligned!")
+            if "mean" in hf:
+                if hf["mean"].shape != (hf["basis"].shape[0],):
+                    raise RuntimeError("basis and mean snapshot not aligned!")
+                mean = hf["mean"][:]
+            else:
+                mean = np.zeros(hf["basis"].shape[0])
 
             # Load the data.
-            return hf["basis"][:,:r], hf["mean"][:], hf["scales"][:]
+            return hf["basis"][:,:r], mean, hf["scales"][:]
 
 
 def load_projected_data(trainsize, r):
@@ -336,13 +344,13 @@ def load_rom(trainsize, r, regs):
         Dimension of the ROM. Also the number of retained POD modes (left
         singular vectors) used to project the training data.
 
-    regs : two positive floats
-        Regularization parameters used in the Operator Inference least-squares
-        problem for training the ROM.
+    regs : one, two, or three positive floats
+        Regularization hyperparameters used in the Operator Inference
+        least-squares problem for training the ROM.
 
     Returns
     -------
-    rom : roi.InferredContinuousROM
+    rom : opinf.InferredContinuousROM
         The trained reduced-order model.
     """
     # Locate the data.
@@ -350,16 +358,16 @@ def load_rom(trainsize, r, regs):
 
     # Extract the trained ROM.
     try:
-        rom = roi.load_model(data_path)
+        rom = opinf.load_model(data_path)
     except FileNotFoundError as e:
         raise DataNotFoundError(f"could not locate ROM with {trainsize:d} "
-                                f"training snapshots, r={r:d}, "
-                                f"and λ1={regs[0]:e}, λ2={regs[1]:e}") from e
+                                f"training snapshots, r={r:d}, and "
+                                f"{config.REGSTR(regs)}") from e
     # Check ROM dimension.
     if rom.r != r:
         raise RuntimeError(f"rom.r = {rom.r} != {r}")
 
-    rom.trainsize, rom.λ1, rom.λ2 = trainsize, regs[0], regs[1]
+    rom.trainsize, rom.regs = trainsize, regs
     return rom
 
 

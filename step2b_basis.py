@@ -25,7 +25,7 @@ import h5py
 import logging
 import scipy.linalg as la
 
-import rom_operator_inference as roi
+import rom_operator_inference as opinf
 
 import config
 import utils
@@ -55,9 +55,9 @@ def compute_and_save_pod_basis(num_modes, training_data, qbar, scales):
     """
     # Compute the randomized SVD from the training data.
     with utils.timed_block(f"Computing {num_modes}-component randomized SVD"):
-        V, svdvals = roi.pre.pod_basis(training_data, r=num_modes,
-                                       mode="randomized",
-                                       n_iter=15, random_state=42)
+        V, svdvals = opinf.pre.pod_basis(training_data, r=num_modes,
+                                         mode="randomized",
+                                         n_iter=15, random_state=42)
 
     # Save the POD basis.
     save_path = config.basis_path(training_data.shape[1])

@@ -8,6 +8,8 @@ preferably as an absolute path. Other global variables specify the naming
 conventions for the various data files.
 """
 import os
+import json
+import time
 import logging
 import numpy as np
 import matplotlib.pyplot as plt
@@ -28,6 +30,7 @@ GEMS_DATA_FILE = "gems.h5"                  # Name of GEMS data file.
 SCALED_DATA_FILE = "data_scaled.h5"         # Name of scaled data files.
 BASIS_FILE = "basis.h5"                     # Name of POD basis files.
 PROJECTED_DATA_FILE = "data_projected.h5"   # Name of projected data files.
+ROM_INDEX_FILE = "roms.json"                # Name of ROM index files.
 FEATURES_FILE = "statistical_features.h5"   # Name of statistical feature file.
 GRID_FILE = "grid.dat"                      # Name of Tecplot grid data file.
 LOG_FILE = "log.log"                        # Name of log files.
@@ -53,6 +56,13 @@ def REGFMT(λs):
     if np.isscalar(λs) or len(λs) != 2 or any(λ < 0 for λ in λs):
         raise ValueError(f"invalid regularization parameters {λs}")
     return REG_PREFIX + "_".join(f"{λ:06.0f}" for λ in λs)
+
+
+def REGSTR(λs):
+    """[x,y,z] -> 'λ1=x, λ2=y, λ3=z'"""
+    if np.isscalar(λs):
+        return f"λ={λs:5e}"
+    return ", ".join(f"λ{i+1}={λ:4e}" for i,λ in enumerate(λs))
 
 
 # Domain geometry -------------------------------------------------------------
@@ -84,7 +94,7 @@ NUM_GEMSVARS = len(GEMS_VARIABLES)          # Number of GEMS variables.
 NUM_ROMVARS = len(ROM_VARIABLES)            # Number of learning variables.
 
 
-# Chemistry constants ---------------------------------------------------------
+# Chemistry and physics -------------------------------------------------------
 
 MOLAR_MASSES = [16.04,                      # Molar mass of CH4 [kg/kmol].
                 32.0,                       # Molar mass of O2  [kg/kmol].
@@ -93,13 +103,6 @@ MOLAR_MASSES = [16.04,                      # Molar mass of CH4 [kg/kmol].
 
 R_UNIVERSAL = 8.3144598                     # Univ. gas constant [J/(mol K)].
 
-
-# ROM Structure ---------------------------------------------------------------
-
-MODELFORM = "cAHB"                          # ROM operators to be inferred.
-
-
-# Input function (Pressure oscillation) ---------------------------------------
 
 def U(t):
     """Input function for pressure oscillation."""
@@ -204,13 +207,67 @@ def projected_data_path(trainsize):
     return os.path.join(BASE_FOLDER, TRNFMT(trainsize), PROJECTED_DATA_FILE)
 
 
-def rom_path(trainsize, r, regs):
-    """Return the path to the file containing a ROM trained from
-    `trainsize` snapshots, projected to an `r`-dimensional space,
-    with regularization parameters `regs`.
+def rom_path(trainsize, r, regs, overwrite=False):
+    """Return the path to a file containing an OpInf ROM.
+
+    Parameters
+    ----------
+    trainsize : int
+        Number of snapshots used to train the ROM. This is also the number
+        of snapshots that were used when the POD basis (SVD) was computed.
+
+    r : int
+        Dimension of the ROM. Also the number of retained POD modes (left
+        singular vectors) used to project the training data.
+
+    regs : one, two, or three positive floats
+        Regularization hyperparameters used in the Operator Inference
+        least-squares problem for training the ROM.
+
+    overwrite : bool
+        If True, make a new ROM filename and overwrite any previous instances
+        with the same trainsize, r, and regs in the ROM index.
+
+    Returns
+    -------
+    filename : str
+        Path to a file to save an OpInf ROM to or load an OpInf ROM from.
     """
-    folder = _makefolder(BASE_FOLDER, TRNFMT(trainsize), DIMFMT(r))
-    return os.path.join(folder, f"{ROM_PREFIX}_{REGFMT(regs)}.h5")
+    rlabel = DIMFMT(r)
+    kfolder = _makefolder(BASE_FOLDER, TRNFMT(trainsize))
+    rfolder = _makefolder(kfolder, rlabel)
+    if np.isscalar(regs):
+        regs = [regs]
+    rregs = np.round(regs, 0)
+
+    # Find (or create) ROM index JSON file.
+    rom_json = os.path.join(kfolder, ROM_INDEX_FILE)
+    if not os.path.isfile(rom_json):
+        with open(rom_json, 'w') as outfile:
+            json.dump({}, outfile)
+
+    # Load and search ROM index file.
+    with open(rom_json, 'r') as infile:
+        rom_data = json.load(infile)
+    if rlabel not in rom_data:
+        rom_data[rlabel] = {}
+    for filename, reglabel in rom_data[rlabel].items():
+        if rregs.size == len(reglabel) and np.all(rregs == np.round(reglabel)):
+            romfile = os.path.join(rfolder, filename)
+            if not overwrite:
+                return romfile
+            else:
+                rom_data[rlabel].pop(filename)
+                if os.path.isfile(romfile):
+                    os.remove(romfile)
+                break
+
+    # Add an entry to the index if the ROM was not found (or superseded).
+    filename = time.strftime("%Y-%m-%d_%H:%M:%S") + ".h5"
+    rom_data[rlabel][filename] = regs
+    with open(rom_json, 'w') as outfile:
+        json.dump(rom_data, outfile, indent=4)
+    return os.path.join(rfolder, filename)
 
 
 def statistical_features_path():
