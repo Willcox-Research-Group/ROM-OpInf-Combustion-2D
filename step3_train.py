@@ -63,6 +63,27 @@ _MAXFUN = 100               # Artificial ceiling for optimization routine.
 
 # Subroutines =================================================================
 
+def get_modelform(regs):
+    """Return the rom_operator_inference ROM modelform that is appropriate for
+    the number of regularization parameters (fully quadratic or fully cubic).
+
+    Parameters
+    ----------
+    regs : two or three non-negative floats
+        Regularization hyperparameters for Operator Inference.
+
+    Returns
+    -------
+    modelform : str
+        'cAHB' for fully quadratic ROM; 'cAHGB' for fully cubic ROM.
+    """
+    if np.isscalar(regs) or len(regs) == 2:
+        return "cAHB"
+    elif len(regs) == 3:
+        return "cAHGB"
+    raise ValueError("expected 2 or 3 regularization hyperparameters")
+
+
 def check_lstsq_size(trainsize, r, modelform="cAHB"):
     """Report the number of unknowns in the Operator Inference problem,
     compared to the number of snapshots. Ask user for confirmation before
@@ -209,7 +230,7 @@ def train_single(trainsize, r, regs):
     utils.reset_logger(trainsize)
 
     # Validate inputs.
-    modelform = "cAHB" if len(regs) == 2 else "cAHGB"
+    modelform = get_modelform(regs)
     check_lstsq_size(trainsize, r, modelform)
     check_regs(regs)
 
@@ -263,7 +284,7 @@ def train_gridsearch(trainsize, r, regs, testsize=None, margin=1.1):
         check_regs(regs[i:i+2])
         grids.append(np.logspace(np.log10(regs[i]),
                                  np.log10(regs[i+1]), int(regs[i+2])))
-    modelform = "cAHB" if len(grids) == 2 else "cAHGB"
+    modelform = get_modelform(grids)
     d = check_lstsq_size(trainsize, r, modelform)
 
     # Load training data.
@@ -350,7 +371,7 @@ def train_minimize(trainsize, r, regs, testsize=None, margin=1.1):
     utils.reset_logger(trainsize)
 
     # Parse aguments.
-    modelform = "cAHB" if len(regs) == 2 else "cAHGB"
+    modelform = get_modelform(regs)
     d = check_lstsq_size(trainsize, r, modelform)
     log10regs = np.log10(check_regs(regs))
 
