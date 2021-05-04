@@ -89,7 +89,7 @@ def scale_and_save_data(trainsize, lifted_data, time_domain, center=False):
 
     # Shift the scaled data by the mean snapshot.
     if center:
-        with utils.timed_block(f"Shifting scaled snapshots by mean"):
+        with utils.timed_block("Shifting scaled snapshots by mean"):
             qbar = np.mean(training_data, axis=1)   # Compute mean snapshot.
             training_data -= qbar.reshape((-1,1))   # Shift columns by mean.
     else:
@@ -146,7 +146,6 @@ if __name__ == "__main__":
                         help="number of snapshots to lift, scale, and save")
     parser.add_argument("--center", action="store_true",
                         help="shift by the mean snapshot after scaling")
-
 
     # Do the main routine.
     args = parser.parse_args()

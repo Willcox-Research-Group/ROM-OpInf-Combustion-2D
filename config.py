@@ -61,8 +61,8 @@ def REGFMT(λs):
 def REGSTR(λs):
     """[x,y,z] -> 'λ1=x, λ2=y, λ3=z'"""
     if np.isscalar(λs):
-        return f"λ={λs}"
-    return ", ".join(f"λ{i+1}={λ}" for i,λ in enumerate(λs))
+        return f"λ={λs:5e}"
+    return ", ".join(f"λ{i+1}={λ:4e}" for i,λ in enumerate(λs))
 
 
 # Domain geometry -------------------------------------------------------------
@@ -94,7 +94,7 @@ NUM_GEMSVARS = len(GEMS_VARIABLES)          # Number of GEMS variables.
 NUM_ROMVARS = len(ROM_VARIABLES)            # Number of learning variables.
 
 
-# Chemistry constants ---------------------------------------------------------
+# Chemistry and physics -------------------------------------------------------
 
 MOLAR_MASSES = [16.04,                      # Molar mass of CH4 [kg/kmol].
                 32.0,                       # Molar mass of O2  [kg/kmol].
@@ -103,8 +103,6 @@ MOLAR_MASSES = [16.04,                      # Molar mass of CH4 [kg/kmol].
 
 R_UNIVERSAL = 8.3144598                     # Univ. gas constant [J/(mol K)].
 
-
-# Input function (Pressure oscillation) ---------------------------------------
 
 def U(t):
     """Input function for pressure oscillation."""
