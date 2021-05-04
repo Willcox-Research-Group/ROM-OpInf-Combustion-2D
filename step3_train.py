@@ -33,6 +33,9 @@ $ python3 step3_train.py --gridsearch 10000 40 5e2 9e3 4 8e3 1e4 5
 $ python3 step3_train.py --minimize 10000 30 300 7000
                          --testsize 60000 --margin 1.5
 
+Indicating 3 regularization hyperparameters instead of 2 results in training a
+cubic model.
+
 Loading Results
 ---------------
 >>> import utils
@@ -77,6 +80,7 @@ def check_lstsq_size(trainsize, r, modelform="cAHB"):
         logging.warning(message)
         if input(f"{message}! CONTINUE? [y/n] ") != "y":
             raise ValueError(message)
+    return d
 
 
 def check_regs(regs, num=2):
@@ -201,15 +205,15 @@ def train_single(trainsize, r, regs):
         Dimension of the desired ROM. Also the number of retained POD modes
         (left singular vectors) used to project the training data.
 
-    regs : two positive floats
-        Regularization hyperparameters (non-quadratic, quadratic) to use in
-        the Operator Inference least-squares problem for training the ROM.
+    regs : two or three positive floats
+        Regularization hyperparameters (first-order, quadratic, cubic) to use
+        in the Operator Inference least-squares problem for training the ROM.
     """
     utils.reset_logger(trainsize)
 
     # Validate inputs.
     check_lstsq_size(trainsize, r, modelform="cAHB")
-    λ1, λ2 = check_regs(regs)
+    check_regs(regs, len(regs))
 
     # Load training data.
     Q_, Qdot_, t = utils.load_projected_data(trainsize, r)
@@ -217,7 +221,7 @@ def train_single(trainsize, r, regs):
 
     # Train and save the ROM.
     with utils.timed_block(f"Training ROM with k={trainsize:d}, "
-                           f"r={r:d}, λ1={λ1:.0f}, λ2={λ2:.0f}"):
+                           f"{config.REGSTR(regs)}"):
         rom = opinf.InferredContinuousROM("cAHB")
         rom.fit(None, Q_, Qdot_, U, P=regularizer(r, λ1, λ2))
         save_trained_rom(trainsize, r, regs, rom)
@@ -270,7 +274,8 @@ def train_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     M = margin * np.abs(Q_).max()
 
     # Create a solver mapping regularization parameters to operators.
-    print(f"TRAINING {λ1grid.size*λ2grid.size} ROMS")
+    num_tests = λ1grid.size*λ2grid.size
+    print(f"TRAINING {num_tests} ROMS")
     with utils.timed_block(f"Constructing least-squares solver, r={r:d}"):
         rom = opinf.InferredContinuousROM("cAHB")
         rom._construct_solver(None, Q_, Qdot_, U, np.ones(d))
@@ -278,8 +283,9 @@ def train_gridsearch(trainsize, r, regs, testsize=None, margin=1.5):
     # Test each regularization parameter.
     errors_pass = {}
     errors_fail = {}
-    for λ1,λ2 in itertools.product(λ1grid, λ2grid):
-        with utils.timed_block(f"Testing ROM with λ1={λ1:5e}, λ2={λ2:5e}"):
+    for i, (λ1,λ2) in enumerate(itertools.product(λ1grid, λ2grid)):
+        with utils.timed_block(f"({i+1:d}/{num_tests:d}) Testing ROM with "
+                               f"λ1={λ1:5e}, λ2={λ2:5e}"):
             # Train the ROM on all training snapshots.
             rom._evaluate_solver(regularizer(r, λ1, λ2))
 
@@ -467,8 +473,8 @@ def train_gridsearch_cubic(trainsize, r, regs, testsize=None, margin=1.5):
 
     # Parse aguments.
     d = check_lstsq_size(trainsize, r, modelform="cAHGB")
-    if len(regs) != 6:
-        raise ValueError("len(regs) != 6 (bounds / sizes for parameter grid")
+    if len(regs) != 9:
+        raise ValueError("len(regs) != 9 (bounds / sizes for parameter grid")
     for i in [0, 3, 6]:
         check_regs(regs[i:i+2], 2)
     λ1grid = np.logspace(np.log10(regs[0]), np.log10(regs[1]), int(regs[2]))
@@ -484,7 +490,8 @@ def train_gridsearch_cubic(trainsize, r, regs, testsize=None, margin=1.5):
     M = margin * np.abs(Q_).max()
 
     # Create a solver mapping regularization parameters to operators.
-    print(f"TRAINING {λ1grid.size*λ2grid.size*λ3grid.size} ROMS")
+    num_tests = λ1grid.size*λ2grid.size*λ3grid.size
+    print(f"TRAINING {num_tests} ROMS")
     with utils.timed_block(f"Constructing least-squares solver, r={r:d}"):
         rom = opinf.InferredContinuousROM("cAHGB")
         rom._construct_solver(None, Q_, Qdot_, U, np.ones(d))
@@ -492,8 +499,8 @@ def train_gridsearch_cubic(trainsize, r, regs, testsize=None, margin=1.5):
     # Test each regularization parameter.
     errors_pass = {}
     errors_fail = {}
-    for λ1,λ2,λ3 in itertools.product(λ1grid, λ2grid, λ3grid):
-        with utils.timed_block("Testing ROM with "
+    for i, (λ1,λ2,λ3) in enumerate(itertools.product(λ1grid, λ2grid, λ3grid)):
+        with utils.timed_block(f"({i+1:d}/{num_tests:d}) Testing ROM with "
                                f"λ1={λ1:5e}, λ2={λ2:5e}, λ3={λ3:5e}"):
             # Train the ROM on all training snapshots.
             rom._evaluate_solver(regularizer(r, λ1, λ2, λ3))
@@ -508,9 +515,9 @@ def train_gridsearch_cubic(trainsize, r, regs, testsize=None, margin=1.5):
 
             # Calculate integrated relative errors in the reduced space.
             if q_rom.shape[1] > trainsize:
-                errors[(λ1,λ2)] = opinf.post.Lp_error(Q_,
-                                                      q_rom[:,:trainsize],
-                                                      t[:trainsize])[1]
+                errors[(λ1,λ2,λ3)] = opinf.post.Lp_error(Q_,
+                                                         q_rom[:,:trainsize],
+                                                         t[:trainsize])[1]
 
     # Choose and save the ROM with the least error.
     if not errors_pass:
@@ -710,10 +717,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} --help
-        python3 {__file__} --single TRAINSIZE R REG1 REG2
-        python3 {__file__} --gridsearch TRAINSIZE R REG1 ... REG6
+        python3 {__file__} --single TRAINSIZE R REG1 REG2 [REG3]
+        python3 {__file__} --gridsearch TRAINSIZE R REG1 ... REG6 [... REG9]
                                --testsize TESTSIZE --margin TAU
-        python3 {__file__} --minimize TRAINSIZE R REG1 REG2
+        python3 {__file__} --minimize TRAINSIZE R REG1 REG2 [REG3]
                                --testsize TESTSIZE --margin TAU"""
     # Parser subcommands
     group = parser.add_mutually_exclusive_group(required=True)
@@ -754,10 +761,23 @@ if __name__ == "__main__":
     # Parse arguments and do one of the main routines.
     args = parser.parse_args()
     if args.single:
-        train_single(args.trainsize, args.modes, args.regularization)
+        if len(args.regularization) == 3:
+            train_single_cubic(args.trainsize, args.modes, args.regularization)
+        else:
+            train_single(args.trainsize, args.modes, args.regularization)
     elif args.gridsearch:
-        train_gridsearch(args.trainsize, args.modes, args.regularization,
-                         args.testsize, args.margin)
+        if len(args.regularization) == 9:
+            train_gridsearch_cubic(args.trainsize, args.modes,
+                                   args.regularization,
+                                   args.testsize, args.margin)
+        else:
+            train_gridsearch(args.trainsize, args.modes, args.regularization,
+                             args.testsize, args.margin)
     elif args.minimize:
-        train_minimize(args.trainsize, args.modes, args.regularization,
-                       args.testsize, args.margin)
+        if len(args.regularization) == 3:
+            train_minimize_cubic(args.trainsize, args.modes,
+                                 args.regularization,
+                                 args.testsize, args.margin)
+        else:
+            train_minimize(args.trainsize, args.modes, args.regularization,
+                           args.testsize, args.margin)
