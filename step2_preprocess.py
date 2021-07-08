@@ -65,7 +65,6 @@ def main(trainsize, num_modes, center=False):
         before computing the POD basis.
     """
     utils.reset_logger(trainsize)
-
     # STEP 2A: Lift and scale the data ----------------------------------------
     try:
         # Attempt to load existing lifted, scaled data.
@@ -94,23 +93,3 @@ def main(trainsize, num_modes, center=False):
 
     # STEP 2C: Project data to the appropriate subspace -----------------------
     return step2c.project_and_save_data(training_data, time, basis)
-
-
-# =============================================================================
-if __name__ == "__main__":
-    # Set up command line argument parsing.
-    import argparse
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.usage = f""" python3 {__file__} --help
-        python3 {__file__} TRAINSIZE MODES [--center]"""
-    parser.add_argument("trainsize", type=int,
-                        help="number of snapshots in the training data")
-    parser.add_argument("modes", type=int,
-                        help="number of POD modes for projecting data")
-    parser.add_argument("--center", action="store_true",
-                        help="shift by the mean snapshot after scaling")
-
-    # Do the main routine.
-    args = parser.parse_args()
-    main(args.trainsize, args.modes, center=args.center)
