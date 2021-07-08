@@ -1,11 +1,7 @@
 # utils.py
-"""Utilities for logging and timing operations, loading and saving data,
-saving figures, and calculating ROM reconstruction errors.
-"""
+"""Utilities for logging, timing, loading, and saving."""
 import os
-import re
 import sys
-import glob
 import h5py
 import time
 import logging
@@ -13,11 +9,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 try:
-    import rom_operator_inference as roi
+    import rom_operator_inference as opinf
 except ModuleNotFoundError:
     print("\nrom_operator_inference module not installed",
-          "(python3 -m pip install --user rom-operator-inference)\n")
+          "(python3 -m pip install --user -r requirements.txt)\n")
     raise
+if opinf.__version__ != "1.2.1":
+    raise ModuleNotFoundError("rom-operator-inference version 1.2.1 required "
+                              "(python3 -m pip install --user "
+                              "-r requirements.txt)")
 
 import config
 
@@ -114,11 +114,11 @@ def load_gems_data(rows=None, cols=None):
 
     Parameters
     ----------
-    rows : int, slice, or one-dimensional ndarray of integer indices
+    rows : int, slice, or (nrows,) ndarray of integer indices
         Which rows (spatial locations) to extract from the data (default all).
         If an integer, extract the first `rows` rows.
 
-    cols : int, slice, or one-dimensional ndarray of integer indices
+    cols : int or slice
         Which columns (temporal points) to extract from the data (default all).
         If an integer, extract the first `cols` columns.
 
@@ -133,21 +133,14 @@ def load_gems_data(rows=None, cols=None):
     # Locate the data.
     data_path = _checkexists(config.gems_data_path())
 
-    # Ensure data is loaded in ascending index order (HDF5 requirement).
-    if isinstance(rows, np.ndarray):
-        if isinstance(cols, np.ndarray):
-            raise ValueError("only one of `rows` and `cols` can be NumPy array")
-        roworder = np.argsort(rows)
-        rows = rows.copy()[roworder]
-        oldroworder = np.argsort(roworder)
+    # Ensure rows are loaded in ascending index order (HDF5 requirement).
+    if isinstance(rows, (np.ndarray, list)):
+        row_order = np.argsort(rows)
+        rows = np.array(rows, copy=True)[row_order]
+        old_row_order = np.argsort(row_order)
     elif np.isscalar(rows) or rows is None:
         rows = slice(None, rows)
-
-    if isinstance(cols, np.ndarray):
-        colorder = np.argsort(cols)
-        cols = cols.copy()[colorder]
-        oldcolorder = np.argsort(colorder)
-    elif np.isscalar(cols) or cols is None:
+    if np.isscalar(cols) or cols is None:
         cols = slice(None, cols)
 
     # Extract the data.
@@ -160,12 +153,9 @@ def load_gems_data(rows=None, cols=None):
             gems_data = hf["data"][rows,cols]
             time_domain = hf["time"][cols]
 
-    # Restore the initial ordering if needed.
+    # Restore row ordering if needed.
     if isinstance(rows, np.ndarray):
-        gems_data = gems_data[oldroworder,:]
-    elif isinstance(cols, np.ndarray):
-        gems_data = gems_data[:,oldcolorder]
-        time_domain = time_domain[oldcolorder]
+        gems_data = gems_data[old_row_order,:]
 
     return gems_data, time_domain
 
@@ -204,18 +194,21 @@ def load_scaled_data(trainsize):
     Parameters
     ----------
     trainsize : int
-        The number of snapshots of scaled data to load. See step1b.py.
+        Number of snapshots of scaled data to load. See step2a_transform.py.
 
     Returns
     -------
-    X : (NUM_ROMVARS*DOF,trainsize) ndarray
-        The lifted, scaled data.
+    Q : (NUM_ROMVARS*DOF,trainsize) ndarray
+        Lifted, scaled, shifted data.
 
     time_domain : (trainsize) ndarray
-        The time domain corresponding to the lifted, scaled data.
+        Time domain corresponding to the lifted, scaled data.
 
-    scales : (NUM_ROMVARS,4) ndarray
-        The min/max factors used to scale the variables.
+    qbar : (NUM_ROMVARS*DOF,) ndarray
+        Mean snapshot of the scaled training data.
+
+    scales : (NUM_ROMVARS,2) ndarray
+        Factors used to scale the variables.
     """
     # Locate the data.
     data_path = _checkexists(config.scaled_data_path(trainsize))
@@ -223,229 +216,162 @@ def load_scaled_data(trainsize):
     # Extract the data.
     with timed_block(f"Loading lifted, scaled snapshot data from {data_path}"):
         with h5py.File(data_path, 'r') as hf:
-            X = hf["data"][:,:]
-            time_domain = hf["time"][:]
-            scales = hf["scales"][:,:]
+            # Check data shapes.
+            if hf["data"].shape != (config.NUM_ROMVARS*config.DOF, trainsize):
+                raise RuntimeError("data set 'data' has incorrect shape")
+            if hf["time"].shape != (trainsize,):
+                raise RuntimeError("data set 'time' has incorrect shape")
+            if "mean" in hf:
+                if hf["mean"].shape != (hf["data"].shape[0],):
+                    raise RuntimeError("data set 'mean' has incorrect shape")
+                mean = hf["mean"][:]
+            else:
+                mean = np.zeros(hf["data"].shape[0])
+            if hf["scales"].shape != (config.NUM_ROMVARS, 2):
+                raise RuntimeError("data set 'scales' has incorrect shape")
 
-        # Check data shapes.
-        if X.shape[1] != trainsize:
-            raise RuntimeError(f"data should have exactly {X.shape[1]} columns")
-        if time_domain.shape != (trainsize,):
-            raise RuntimeError(f"time domain not of shape {(trainsize,)}")
-        if scales.shape != (config.NUM_ROMVARS, 4):
-            raise RuntimeError(f"scales not of shape {(config.NUM_ROMVARS,4)}")
-
-    return X, time_domain, scales
+            # Load and return the data.
+            return (hf["data"][:,:], hf["time"][:],
+                    mean, hf["scales"][:,:])
 
 
-def load_basis(trainsize, rmax):
-    """Load a POD basis and associated singular values.
+def load_basis(trainsize, r):
+    """Load a POD basis and the associated scales.
 
     Parameters
     ----------
     trainsize : int
-        The number of snapshots used when the SVD was computed.
+        Number of snapshots used when the SVD was computed.
 
-    rmax : int
-        The number of left singular vectors/values to load.
+    r : int
+        Number of left singular vectors to load.
 
     Returns
     -------
-    V : (NUM_ROMVARS*DOF,rmax) ndarray
-        The POD basis of rank `rmax` (the first `rmax` left singular vectors).
+    V : (NUM_ROMVARS*DOF,r) ndarray
+        POD basis of rank `r`, i.e., the first `r` left singular vectors of
+        the training data.
 
-    svdvals : (rmax,) ndarray
-        The first `rmax` singular values.
+    qbar : (NUM_ROMVARS*DOF,) ndarray
+        Mean snapshot that the training data was shifted by after scaling
+        but before projection.
+
+    scales : (NUM_ROMVARS,2) ndarray
+        Factors used to scale the variables before projecting.
     """
     # Locate the data.
-    try:
-        data_path = config.smallest_basis_path(trainsize, rmax)
-    except FileNotFoundError as e:
-        raise DataNotFoundError(e) from e
+    data_path = _checkexists(config.basis_path(trainsize))
+
+    # Secret! Return list of full singular values.
+    if r == -1:
+        data_path = data_path.replace(config.BASIS_FILE, "svdvals.h5")
+        with h5py.File(data_path, 'r') as hf:
+            return hf["svdvals"][:]
 
     # Extract the data.
     with timed_block(f"Loading POD basis from {data_path}"):
         with h5py.File(data_path, 'r') as hf:
-            V = hf["V"][:,:rmax]
-            svdvals = hf["svdvals"][:rmax]
+            # Check data shapes.
+            rmax = hf["basis"].shape[1]
+            if r is not None and rmax < r:
+                raise ValueError(f"basis only has {rmax} columns")
+            if "mean" in hf:
+                if hf["mean"].shape != (hf["basis"].shape[0],):
+                    raise RuntimeError("basis and mean snapshot not aligned!")
+                mean = hf["mean"][:]
+            else:
+                mean = np.zeros(hf["basis"].shape[0])
 
-        # Check that there are the right number of columns (retained modes).
-        ncols = V.shape[1]
-        if ncols < rmax:
-            raise RuntimeError(f"basis should have at least {ncols} columns")
-        return V, svdvals
+            # Load the data.
+            return hf["basis"][:,:r], mean, hf["scales"][:]
 
 
-def load_projected_data(trainsize, num_modes):
+def load_projected_data(trainsize, r):
     """Load snapshots that have been projected to a low-dimensional subspace.
 
     Parameters
     ----------
     trainsize : int
-        The number of snapshots to load. This is also the number of
+        Number of snapshots to load. This is also the number of
         snapshots that were used when the POD basis (SVD) was computed.
 
-    num_modes : int
-        The number of retained POD modes used in the projection.
+    r : int
+        Number of retained POD modes used in the projection.
 
     Returns
     -------
-    X_ : (num_modes,trainsize) ndarray
-        The lifted, scaled, projected snapshots.
+    Q_ : (r,trainsize) ndarray
+        Lifted, scaled, projected snapshots.
 
-    Xdot_ : (num_modes,trainsize) ndarray
-        Velocity snapshots corresponding to X_.
+    Qdot_ : (r,trainsize) ndarray
+        Velocity snapshots corresponding to Q_.
 
     time_domain : (trainsize) ndarray
-        The time domain corresponding to the lifted, scaled data.
-
-    scales : (NUM_ROMVARS,4) ndarray
-        The min/max factors used to scale the variables before projecting.
+        Time domain corresponding to the lifted, scaled data.
     """
     # Locate the data.
-    data_path = _checkexists(config.projected_data_path(trainsize, num_modes))
+    data_path = _checkexists(config.projected_data_path(trainsize))
 
     # Extract the data.
-    _shape = (num_modes, trainsize)
     with timed_block(f"Loading projected training data from {data_path}"):
         with h5py.File(data_path, 'r') as hf:
-            X_ = hf["data"][:,:]
-            Xdot_ = hf["xdot"][:,:]
-            time_domain = hf["time"][:]
-            scales = hf["scales"][:,:]
 
-        # Check data shapes.
-        if X_.shape != _shape:
-            raise RuntimeError(f"x data not of shape {_shape}")
-        if Xdot_.shape != _shape:
-            raise RuntimeError(f"xdot data not of shape {_shape}")
-        if time_domain.shape != (_shape[1],):
-            raise RuntimeError(f"time domain not of shape {(_shape[1],)}")
-        if scales.shape != (config.NUM_ROMVARS, 4):
-            raise RuntimeError(f"scales not of shape {(config.NUM_ROMVARS,4)}")
+            # Check data shapes.
+            rmax = hf["data"].shape[0]
+            if rmax < r:
+                raise ValueError(f"basis only has {rmax} columns")
+            if hf["data"].shape[1] != trainsize:
+                raise RuntimeError("data set 'data' has incorrect shape")
+            if hf["ddt"].shape != hf["data"].shape:
+                raise RuntimeError("data sets 'data' and 'ddt' not aligned")
+            if hf["time"].shape != (trainsize,):
+                raise RuntimeError("data set 'time' has incorrect shape")
 
-    return X_, Xdot_, time_domain, scales
+            # Get the correct rows of the saved projection data.
+            return hf["data"][:r], hf["ddt"][:r], hf["time"][:]
 
 
-def load_rom(trainsize, num_modes, reg):
+def load_rom(trainsize, r, regs):
     """Load a single trained ROM.
 
     Parameters
     ----------
     trainsize : int
-        The number of snapshots used to train the ROM. This is also the number
+        Number of snapshots used to train the ROM. This is also the number
         of snapshots that were used when the POD basis (SVD) was computed.
 
-    num_modes : int
-        The dimension of the ROM. This is also the number of retained POD modes
-        (left singular vectors) used to project the training data.
+    r : int
+        Dimension of the ROM. Also the number of retained POD modes (left
+        singular vectors) used to project the training data.
 
-    reg : float
-        The regularization factor used in the Operator Inference least-squares
-        problem for training the ROM.
+    regs : one, two, or three positive floats
+        Regularization hyperparameters used in the Operator Inference
+        least-squares problem for training the ROM.
 
     Returns
     -------
-    rom : roi.InferredContinuousROM
+    rom : opinf.InferredContinuousROM
         The trained reduced-order model.
     """
     # Locate the data.
-    data_path = _checkexists(config.rom_path(trainsize, num_modes, reg))
+    data_path = _checkexists(config.rom_path(trainsize, r, regs))
 
     # Extract the trained ROM.
     try:
-        rom = roi.load_model(data_path)
+        rom = opinf.load_model(data_path)
     except FileNotFoundError as e:
         raise DataNotFoundError(f"could not locate ROM with {trainsize:d} "
-                                f"training snapshots, r={num_modes}, and "
-                                f"reg={reg:e}") from e
-    # Check data shapes.
-    if rom.r != num_modes:
-        raise RuntimeError(f"rom.r = {rom.r} != {num_modes}")
+                                f"training snapshots, r={r:d}, and "
+                                f"{config.REGSTR(regs)}") from e
+    # Check ROM dimension.
+    if rom.r != r:
+        raise RuntimeError(f"rom.r = {rom.r} != {r}")
 
+    rom.trainsize, rom.regs = trainsize, regs
     return rom
 
 
-def load_all_roms_r(trainsize, num_modes):
-    """Load all trained ROM of the same dimension for a given training size.
-
-    Parameters
-    ----------
-    trainsize : int
-        The number of snapshots used to train the ROMs. This is also the number
-        of snapshots that were used when the POD basis (SVD) was computed.
-
-    num_modes : int
-        The dimension of the ROMs. This is also the number of retained POD
-        modes (left singular vectors) used to project the training data.
-
-    Returns
-    -------
-    regs : list(float)
-        The regularization factors corresponding to the ROMs.
-
-    roms : list(roi.InferredContinuousROM)
-        The trained reduced-order models.
-    """
-    # Find the ROM files of interest.
-    folder = os.path.join(config.BASE_FOLDER,
-                          config.TRNFMT(trainsize), config.DIMFMT(num_modes))
-    pat = os.path.join(folder, f"{config.ROM_PREFIX}_{config.REG_PREFIX}*.h5")
-    romfiles = sorted(glob.glob(pat))
-    if not romfiles:
-        raise DataNotFoundError(f"no trained ROMs with {trainsize:d} "
-                                f"training snapshots and {num_modes:d} "
-                                f"retained POD modes")
-
-    # Load the files (in sorted order).
-    regs = sorted(float(re.findall(fr"_{config.REG_PREFIX}(.+?)\.h5", s)[0])
-                                                          for s in romfiles)
-    roms = [load_rom(trainsize, num_modes, reg) for reg in regs]
-
-    return regs, roms
-
-
-def load_all_roms_reg(trainsize, reg):
-    """For a given training size, load all trained ROM that were trained
-    with the same regularization parameter.
-
-    Parameters
-    ----------
-    trainsize : int
-        The number of snapshots used to train the ROMs. This is also the number
-        of snapshots that were used when the POD basis (SVD) was computed.
-
-    reg : float
-        The regularization factor used in the Operator Inference least-squares
-        problem for training the ROMs.
-
-    Returns
-    -------
-    rs : list(int)
-        The dimension (number of retained POD modes) of each ROM.
-
-    roms : list(roi.InferredContinuousROM)
-        The trained reduced-order models.
-    """
-    # Find the rom files of interest.
-    pat = os.path.join(config.BASE_FOLDER,
-                       config.TRNFMT(trainsize),
-                       f"r*",
-                       f"{config.ROM_PREFIX}_{config.REGFMT(reg)}.h5")
-    romfiles = glob.glob(pat)
-    if not romfiles:
-        raise DataNotFoundError(f"no trained ROMs with {trainsize:d} "
-                                f"training snapshots and regularization "
-                                f"factor {reg:e}")
-
-    # Load the files (in sorted order).
-    rs = sorted(int(re.findall(r"r(\d+)", s)[0]) for s in romfiles)
-    roms = [load_rom(trainsize, r, reg) for r in rs]
-
-    return rs, roms
-
-
-def load_statistical_features(keys, k=None):
+def load_spatial_statistics(keys, k=None):
     """Load statistical features of the lifted data, computed over the
     spatial domain at each point in time.
 
@@ -459,7 +385,7 @@ def load_statistical_features(keys, k=None):
         * {var}_std : standard deviation of variable var
         * {var}_mean : mean of variable var
         Here var is a member of config.ROM_VARIABLES. Examples:
-        * "T_mean" -> mean temperature
+        * "T_mean" -> spatially averaged temperature
         * "vx_min" -> minimum x-velocity
         * "CH4_sum" -> methane molar concentration integral
 
@@ -487,19 +413,50 @@ def load_statistical_features(keys, k=None):
         k = slice(None, k)
 
     # Extract the data.
-    features = {}
     with timed_block(f"Loading statistical features from {data_path}"):
         with h5py.File(data_path, 'r') as hf:
-            for key in keys:
-                features[key] = hf[key][k]
-            t = hf["time"][k]
+            if len(keys) == 1:
+                return hf[f"space/{keys[0]}"][k], hf["t"][k]
+            return {key: hf[f"space/{key}"][k] for key in keys}, hf["t"][k]
 
-        # Check data shapes.
-        for key in keys:
-            if features[key].shape != t.shape:
-                raise RuntimeError(f"feature {key} not of shape {t.shape}")
 
-    return (features[keys[0]], t) if len(keys) == 1 else (features, t)
+def load_temporal_statistics(keys):
+    """Load statistical features of the lifted data, computed over the
+    temporal domain at each spatial point.
+
+    Parameters
+    ----------
+    keys : list(str)
+        Which data set(s) to load. Options:
+        * {var}_min : minimum of variable var
+        * {var}_max : maximum of variable var
+        * {var}_sum : sum (integral) of variable var
+        * {var}_std : standard deviation of variable var
+        * {var}_mean : mean of variable var
+        Here var is a member of config.ROM_VARIABLES. Examples:
+        * "T_mean" -> time-averaged temperature
+        * "vx_min" -> minimum x-velocity
+        * "CH4_sum" -> methane molar concentration time integral
+
+    Returns
+    -------
+    features : dict(str -> (N,) ndarray) or (N,) ndarray
+        Dictionary of statistical feature arrays with keys `keys`.
+        If only one key is given, return the actual array, not a dict.
+    """
+    # Locate the data.
+    data_path = _checkexists(config.statistical_features_path())
+
+    # Parse arguments.
+    if isinstance(keys, str):
+        keys = [keys]
+
+    # Extract the data.
+    with timed_block(f"Loading statistical features from {data_path}"):
+        with h5py.File(data_path, 'r') as hf:
+            if len(keys) == 1:
+                return hf[f"time/{keys[0]}"][:]
+            return {key: hf[f"time/{key}"][:] for key in keys}
 
 
 # Figure saving ===============================================================
@@ -507,23 +464,7 @@ def load_statistical_features(keys, k=None):
 def save_figure(figname):
     """Save the current matplotlib figure to the figures folder."""
     save_path = os.path.join(config.figures_path(), figname)
-    # plt.show() # Uncomment to display figure in terminal before closing.
+    # plt.show() # Uncomment to display figure before saving.
     with timed_block(f"Saving {save_path}"):
         plt.savefig(save_path, bbox_inches="tight", dpi=1200)
         plt.close(plt.gcf())
-
-
-# Error calculations ==========================================================
-
-def mean_relative_error(x, y):
-    """Compute the mean relative error
-    between a 'true' vector `x` and an approximation `y`.
-    """
-    return np.mean(np.abs(x - y) / np.abs(x))
-
-
-def mean_normalized_absolute_error(x, y):
-    """Compute the mean normalized absolute error
-    between a 'true' vector `x` and an approximation `y`.
-    """
-    return np.mean(np.abs(x - y) / np.max(np.abs(x)))
