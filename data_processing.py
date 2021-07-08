@@ -11,6 +11,8 @@ import numpy as np
 
 import config
 import chemistry_conversions as chem
+import time
+time.perf_counter()
 
 
 # Lifting Transformation =====================================================

@@ -57,7 +57,13 @@ import rom_operator_inference as opinf
 import config
 import utils
 
+trainsize = 20002       # Number of snapshots used as training data.
+num_modes = 44         # Number of POD modes.
+r = num_modes
 
+# Regularization parameters for Operator Inference.
+regs = 9.248289e+03, 2.371337e+05, 5.048738e+06  # 10**4, 10**5, 10**6
+# 100, 3*10**6, 10**7
 _MAXFUN = 100               # Artificial ceiling for optimization routine.
 
 
@@ -244,6 +250,9 @@ def train_single(trainsize, r, regs):
         rom = opinf.InferredContinuousROM(modelform)
         rom.fit(None, Q_, Qdot_, U, P=regularizer(r, *list(regs)))
         save_trained_rom(trainsize, r, regs, rom)
+
+
+train_single(trainsize, r, regs)
 
 
 def train_gridsearch(trainsize, r, regs, testsize=None, margin=1.1):
@@ -513,63 +522,3 @@ def _train_minimize_1D(trainsize, r, regs, testsize=None, margin=1.1):
         message = "Regularization search optimization FAILED"
         print(message)
         logging.info(message)
-
-
-# =============================================================================
-if __name__ == "__main__":
-    # Set up command line argument parsing.
-    import argparse
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.usage = f""" python3 {__file__} --help
-        python3 {__file__} --single TRAINSIZE R REG1 REG2 [REG3]
-        python3 {__file__} --gridsearch TRAINSIZE R REG1 ... REG6 [... REG9]
-                               --testsize TESTSIZE --margin TAU
-        python3 {__file__} --minimize TRAINSIZE R REG1 REG2 [REG3]
-                               --testsize TESTSIZE --margin TAU"""
-    # Parser subcommands
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--single", action="store_true",
-                       help="train and save a single ROM with regularization "
-                            "hyperparameters REG1 (non-quadratic penalizer) "
-                            "and REG2 (quadratic penalizer)")
-    group.add_argument("--gridsearch", action="store_true",
-                       help="train over the REG3xREG6 grid "
-                            "[REG1,REG2]x[REG4,REG5] of regularization "
-                            "hyperparameter candidates, saving only the "
-                            "stable ROM with the least training error")
-    group.add_argument("--minimize", action="store_true",
-                       help="given initial guesses REG1 (non-quadratic  "
-                            "penalizer) and REG2 (quadratic penalizer), use "
-                            "Nelder-Mead search to train and save a ROM that "
-                            "is locally optimal in the regularization "
-                            "hyperparameter space")
-
-    # Positional arguments.
-    parser.add_argument("trainsize", type=int,
-                        help="number of snapshots in the training data")
-    parser.add_argument("modes", type=int,
-                        help="number of POD modes used to project the data "
-                             "(dimension of ROM to be learned)")
-    parser.add_argument("regularization", type=float, nargs='+',
-                        help="regularization hyperparameters for ROM training")
-
-    # Other keyword arguments.
-    parser.add_argument("--testsize", type=int, default=None,
-                        help="number of time steps for which the trained ROM "
-                             "must satisfy the POD bound")
-    parser.add_argument("--margin", type=float, default=1.1,
-                        help="factor by which the POD coefficients of the ROM "
-                             "simulation are allowed to deviate in magnitude "
-                             "from the training data (default 1.1)")
-
-    # Parse arguments and do one of the main routines.
-    args = parser.parse_args()
-    if args.single:
-        train_single(args.trainsize, args.modes, args.regularization)
-    elif args.gridsearch:
-        train_gridsearch(args.trainsize, args.modes, args.regularization,
-                         args.testsize, args.margin)
-    elif args.minimize:
-        train_minimize(args.trainsize, args.modes, args.regularization,
-                       args.testsize, args.margin)

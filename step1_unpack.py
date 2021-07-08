@@ -26,10 +26,6 @@ $ python3 step1_unpack.py /storage/combustion
 # overwriting the resulting HDF5 file if it already exists.
 $ python3 step1_unpack.py . --overwrite
 
-# Process the raw .tar data files in /storage/combustion/ serially
-# (not in parallel, which is the default).
-$ python3 step1_unpack.py /storage/combustion --serial
-
 Loading Results
 ---------------
 >>> import utils
@@ -38,6 +34,7 @@ Loading Results
 Command Line Arguments
 ----------------------
 """
+
 import os
 import re
 import glob
@@ -58,7 +55,7 @@ _HEADEREND = re.compile(r"DT=.*?\n")        # Last line in .dat headers
 _ELEMENTS = re.compile(r"Elements=(\d+)")   # DOF listed in .dat headers
 
 
-def _read_tar_and_save_data(tfile, start, stop, parallel=True):
+def _read_tar_and_save_data(tfile, start, stop):
     """Read snapshot data directly from a .tar archive (without untar-ing it)
     and copy the data to the snapshot matrix HDF5 file config.GEMS_DATA_FILE.
 
@@ -72,10 +69,6 @@ def _read_tar_and_save_data(tfile, start, stop, parallel=True):
 
     stop : int
         Index of the last snapshot contained in the .tar file.
-
-    parallel : bool
-        If True, then only print progress if start == 0 and lock / unlock
-        when writing to the HDF5 file.
     """
     # Allocate space for the snapshots in this .tar file.
     num_snapshots = stop - start
@@ -104,31 +97,29 @@ def _read_tar_and_save_data(tfile, start, stop, parallel=True):
             data = contents[headersize:].split()[:gems_data.shape[0]],
             gems_data[:,j] = np.array(data, dtype=np.float64)
             times[j] = simtime
-            if start == 0 or not parallel:
+            if start == 0:
                 print(f"\rProcessed file {j+1:05d}/{num_snapshots}",
                       end='', flush=True)
-    if start == 0 or not parallel:
+    if start == 0:
         print()
 
     # Save the data to the appropriate slice.
     save_path = config.gems_data_path()
-    if parallel:
-        lock.acquire()  # Only allow one process to open the file at a time.
+    lock.acquire()      # Only allow one process to open the file at a time.
     with utils.timed_block(f"Saving snapshots {start}-{stop} to HDF5"):
         with h5py.File(save_path, 'a') as hf:
             hf["data"][:,start:stop] = gems_data
             hf["time"][start:stop] = times
-    print(f"Data saved to {save_path}.", flush=True)
-    if parallel:
-        lock.release()  # Let other processes resume.
+    print(f"Data saved to {save_path}.")
+    lock.release()      # Let other processes resume.
 
 
-def _globalize_lock(L):
+def _globalize_lock(lk):
     global lock
-    lock = L
+    lock = lk
 
 
-def main(data_folder, overwrite=False, serial=False):
+def main(data_folder, overwrite=False):
     """Extract snapshot data, in parallel, from the .tar files in the
     specified folder of the form Data_<first-snapshot>to<last-snapshot>.tar.
 
@@ -141,10 +132,6 @@ def main(data_folder, overwrite=False, serial=False):
     overwrite : bool
         If False and the snapshot matrix file exists, raise an error.
         If True, overwrite the existing snapshot matrix file if it exists.
-
-    serial : bool
-        If True, do the unpacking sequentially in 10,000 snapshot chunks.
-        If False, do the unpacking in parallel with 10,000 snapshot chunks.
     """
     utils.reset_logger()
 
@@ -186,39 +173,35 @@ def main(data_folder, overwrite=False, serial=False):
         raise FileExistsError(f"{save_path} (use --overwrite to overwrite)")
     with utils.timed_block("Initializing HDF5 file for data"):
         with h5py.File(save_path, 'w') as hf:
-            hf.create_dataset("data", shape=(config.DOF*config.NUM_GEMSVARS,
-                                             num_snapshots),
+            hf.create_dataset("data",
+                              shape=(config.DOF*config.NUM_GEMSVARS,
+                                     num_snapshots),
                               dtype=np.float64)
-            hf.create_dataset("time", shape=(num_snapshots,), dtype=np.float64)
+            hf.create_dataset("time",
+                              shape=(num_snapshots,),
+                              dtype=np.float64)
     logging.info(f"Data file initialized as {save_path}.")
 
-    # Read the files in chunks.
-    args = zip(tarfiles, starts, stops)
-    if serial:       # Read the files serially (sequentially).
-        for tf, start, stop in args:
-            _read_tar_and_save_data(tf, start, stop, parallel=False)
-    else:            # Read the files in parallel.
-        with mp.Pool(initializer=_globalize_lock, initargs=(mp.Lock(),),
-                     processes=min([len(tarfiles), mp.cpu_count()])) as pool:
-            pool.starmap(_read_tar_and_save_data, args)
+    # Read the tar files in parallel. TESTED ON LINUX ONLY.
+    with mp.Pool(initializer=_globalize_lock, initargs=(mp.Lock(),),
+                 processes=min([len(tarfiles), mp.cpu_count()])) as pool:
+        pool.starmap(_read_tar_and_save_data, zip(tarfiles, starts, stops))
 
 
 # =============================================================================
 if __name__ == '__main__':
     # Set up command line argument parsing.
     import argparse
+    formatter = argparse.RawDescriptionHelpFormatter
     parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+                                     formatter_class=formatter)
     parser.usage = f""" python3 {__file__} --help
-        python3 {__file__} DATAFOLDER [--overwrite] [--serial]"""
-
+        python3 {__file__} DATAFOLDER [--overwrite]"""
     parser.add_argument("datafolder", type=str,
-                        help="folder containing the raw GEMS .tar data files")
+                        help="the folder containing the raw .tar data files")
     parser.add_argument("--overwrite", action="store_true",
                         help="overwrite the existing HDF5 data file")
-    parser.add_argument("--serial", action="store_true",
-                        help="do the unpacking sequentially, not in parallel")
 
     # Do the main routine.
     args = parser.parse_args()
-    main(args.datafolder, args.overwrite, args.serial)
+    main(args.datafolder, args.overwrite)
