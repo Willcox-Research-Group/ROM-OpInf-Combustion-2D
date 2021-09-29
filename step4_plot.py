@@ -476,47 +476,4 @@ def main(trainsize, r, regs, elems=None, plotPointTrace=False,
         spatial_statistics(trainsize, r, regs)
 
 
-# =============================================================================
-if __name__ == "__main__":
-    # Set up command line argument parsing.
-    import argparse
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.usage = f""" python3 {__file__} --help
-        python3 {__file__} --point-traces TRAINSIZE MODES REG1 REG2
-                           [--location L [...]]
-        python3 {__file__} --relative-errors TRAINSIZE MODES REG1 REG2
-        python3 {__file__} --spatial-statistics TRAINSIZE MODES REG1 REG2"""
-
-    # Positional arguments
-    parser.add_argument("trainsize", type=int,
-                        help="number of snapshots in the training data")
-    parser.add_argument("modes", type=int,
-                        help="number of POD modes used to project the data"
-                             " (dimension of the learned ROM)")
-    parser.add_argument("regularization", type=float, nargs='+',
-                        help="regularization hyperparameters used in the "
-                             "Operator Inference problem for learning the ROM")
-
-    # Routine indicators
-    parser.add_argument("--point-traces", action="store_true",
-                        help="plot point traces in time at the specified "
-                             "monitoring locations")
-    parser.add_argument("--relative-errors", action="store_true",
-                        help="plot relative errors in time, averaged over "
-                             "the spatial domain")
-    parser.add_argument("--spatial-statistics", action="store_true",
-                        help="plot spatial averages and species integrals")
-
-    # Other keyword arguments
-    parser.add_argument("--location", type=int, nargs='+',
-                        default=config.MONITOR_LOCATIONS,
-                        help="monitor locations for time trace plots")
-
-    # Parse the arguments and do the main routine.
-    args = parser.parse_args()
-    main(trainsize=args.trainsize,
-         r=args.modes, regs=args.regularization,
-         plotPointTrace=args.point_traces, elems=args.location,
-         plotRelativeErrors=args.relative_errors,
-         plotSpatialStatistics=args.spatial_statistics)
+# point_traces(trainsize, r, regs, elems, cutoff=59900)

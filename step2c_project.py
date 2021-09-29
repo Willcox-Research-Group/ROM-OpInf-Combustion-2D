@@ -109,19 +109,3 @@ def main(trainsize):
 
     # Project and save the data.
     return project_and_save_data(scaled_data, time_domain, V)
-
-
-# =============================================================================
-if __name__ == "__main__":
-    # Set up command line argument parsing.
-    import argparse
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.usage = f""" python3 {__file__} --help
-        python3 {__file__} TRAINSIZE"""
-    parser.add_argument("trainsize", type=int,
-                        help="number of snapshots in the training data")
-
-    # Do the main routine.
-    args = parser.parse_args()
-    main(args.trainsize)
