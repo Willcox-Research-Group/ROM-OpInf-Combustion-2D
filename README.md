@@ -41,8 +41,7 @@ year = {2021},
 publisher = {Taylor & Francis},
 }</pre></details>
 
-- [Jain, P.](https://www.linkedin.com/in/parikshit-jain-6b870961/), [McQuarrie, S. A.](https://scholar.google.com/citations?user=qQ6JDJ4AAAAJ), and [Kramer, B.](http://kramer.ucsd.edu/), [**Performance comparison of data-driven reduced models for a single-injector combustion process**](https://arc.aiaa.org/doi/abs/10.2514/6.2021-3633). _AIAA Propulsion and Energy Forum and Exposition_, 2021. Paper AIAA-2021-3633.
-<details><summary>BibTeX</summary><pre>
+- [Jain, P.](https://www.linkedin.com/in/parikshit-jain-6b870961/), [McQuarrie, S. A.](https://scholar.google.com/citations?user=qQ6JDJ4AAAAJ), and [Kramer, B.](http://kramer.ucsd.edu/), [**Performance comparison of data-driven reduced models for a single-injector combustion process**](https://arc.aiaa.org/doi/abs/10.2514/6.2021-3633). _AIAA Propulsion and Energy Forum and Exposition_, 2021. Paper AIAA-2021-3633. <details><summary>BibTeX</summary><pre>
 @inproceedings{jain2021performance,
 title = {Performance comparison of data-driven reduced models for a single-injector combustion process},
 author = {Jain, Parikshit and McQuarrie, Shane and Kramer, Boris},
