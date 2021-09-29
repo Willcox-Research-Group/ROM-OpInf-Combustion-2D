@@ -13,11 +13,12 @@ time.perf_counter()
 t = np.arange(0.015, 0.021, 10**-7)
 
 # Data location.
-Base_folder = "C:\\Users\\Admin\\Desktop\\combustion\\"
+Base_folder = ""
 os.chdir(Base_folder)
-Saved_scaled_data_file_name = Base_folder + 'Scaled_data60k_final.npy'
-Saved_scales = Base_folder + 'Scales_of_data60k_final.npy'
-Saved_data = Base_folder + 'data60k_final.npy'
+Saved_scaled_data_file_name = os.path.join(Base_folder,
+                                           "Scaled_data60k_final.npy")
+Saved_scales = os.path.join(Base_folder, "Scales_of_data60k_final.npy")
+Saved_data = os.path.join(Base_folder, "data60k_final.npy")
 
 # Load the scaled data and scales.
 # It is better to save the scaled data once and load it each time.
