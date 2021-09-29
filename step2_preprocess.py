@@ -42,7 +42,7 @@ import step2b_basis as step2b
 import step2c_project as step2c
 
 
-def main(trainsize, num_modes, center=False):
+def main(trainsize, num_modes):
     """Lift and scale the GEMS simulation data; compute a POD basis of the
     lifted, scaled snapshot training data; project the lifted, scaled snapshot
     training data to the subspace spanned by the columns of the POD basis V,
@@ -59,10 +59,6 @@ def main(trainsize, num_modes, center=False):
         The number of POD modes (left singular vectors) to use in the
         projection. This is the upper bound for the size of ROMs that
         can be trained with this data set.
-
-    center : bool
-        If True, center the scaled snapshots by the mean scaled snapshot
-        before computing the POD basis.
     """
     utils.reset_logger(trainsize)
 
@@ -76,7 +72,7 @@ def main(trainsize, num_modes, center=False):
         lifted_data, time = step2a.load_and_lift_gems_data(trainsize)
         training_data, qbar, scales = step2a.scale_and_save_data(trainsize,
                                                                  lifted_data,
-                                                                 time, center)
+                                                                 time)
         del lifted_data
 
     # STEP 2B: Get the POD basis from the lifted, scaled data -----------------
@@ -103,14 +99,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} --help
-        python3 {__file__} TRAINSIZE MODES [--center]"""
+        python3 {__file__} TRAINSIZE MODES"""
     parser.add_argument("trainsize", type=int,
                         help="number of snapshots in the training data")
     parser.add_argument("modes", type=int,
                         help="number of POD modes for projecting data")
-    parser.add_argument("--center", action="store_true",
-                        help="shift by the mean snapshot after scaling")
 
     # Do the main routine.
     args = parser.parse_args()
-    main(args.trainsize, args.modes, center=args.center)
+    main(args.trainsize, args.modes)

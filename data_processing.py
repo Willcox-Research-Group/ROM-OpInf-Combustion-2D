@@ -108,7 +108,7 @@ def getvar(varname, data):
     return data[_varslice(varname, data.shape[0])]
 
 
-# MinMax scaling / unscaling ==================================================
+# MaxAbs scaling / unscaling ==================================================
 
 def scale(data, scales=None, variables=None):
     """Scale data *IN-PLACE* by variable, meaning every chunk of DOF
@@ -116,7 +116,7 @@ def scale(data, scales=None, variables=None):
     an integer.
 
     If `scales` is provided, variable i is scaled as
-    new_variable[i] = (raw_variable[i] - scales[i,0]) / scales[i,1].
+    new_variable[i] = raw_variable[i] / scales[i].
     Otherwise, the scaling is learned from the data.
 
     Parameters
@@ -124,11 +124,9 @@ def scale(data, scales=None, variables=None):
     data : (num_variables*DOF, num_snapshots) ndarray
         Dataset to be scaled.
 
-    scales : (NUM_ROMVARS, 2) ndarray or None
-        Shifting and scaling factors. If None, learn the factors from the data:
-            scales[i] = [shift, max(abs(raw_variable[i] - shift))],
-        where shift = mean(raw_variable[i]) for pressure, temperature, and
-        specific volume, and shift = 0 for the other variables.
+    scales : (NUM_ROMVARS,) ndarray or None
+        Scaling factors. If None, learn the factors from the data:
+            scales[i] = max(abs(raw_variable[i])).
 
     variables : list(str)
         List of variables to scale, a subset of config.ROM_VARIABLES.
@@ -140,18 +138,18 @@ def scale(data, scales=None, variables=None):
     scaled_data : (num_variables*DOF, num_snapshots)
         Scaled data.
 
-    scales : (NUM_ROMVARS, 2) ndarray
-        Shifting and dilation factors used to scale the data.
+    scales : (NUM_ROMVARS,) ndarray
+        Dilation factors used to scale the data.
     """
     # Determine whether learning the scaling transformation is needed.
     learning = (scales is None)
     if learning:
         if variables is not None:
             raise ValueError("scale=None only valid for variables=None")
-        scales = np.empty((config.NUM_ROMVARS, 2), dtype=np.float)
+        scales = np.zeros(config.NUM_ROMVARS, dtype=np.float)
     else:
         # Validate the scales.
-        _shape = (config.NUM_ROMVARS, 2)
+        _shape = (config.NUM_ROMVARS,)
         if scales.shape != _shape:
             raise ValueError(f"`scales` must have shape {_shape}")
 
@@ -174,40 +172,32 @@ def scale(data, scales=None, variables=None):
         s = slice(i*chunksize,(i+1)*chunksize)
         if learning:
             assert i == vidx
-            if variables[i] in ["p", "T", "xi"]:
-                scales[vidx,0] = np.mean(data[s])
-                shifted = data[s] - scales[vidx,0]
-            else:
-                scales[vidx,0] = 0
-                shifted = data[s]
-            scales[vidx,1] = np.abs(shifted).max()
-            data[s] = shifted / scales[vidx,1]
-        else:
-            data[s] = (data[s] - scales[vidx,0]) / scales[vidx,1]
+            scales[vidx] = np.abs(data[s]).max()
+        data[s] /= scales[vidx]
 
     # Report info on the learned scaling.
     if learning:
         sep = '|'.join(['-'*12]*2)
         report = f"""Learned new scaling
-                       Shift    |    Denom
+                       MaxAbs
                     {sep}
-    Pressure        {scales[0,0]:<12.3e}|{scales[0,1]:>12.3e}
+    Pressure        {scales[0]:<12.3e}
                     {sep}
-    x-velocity      {scales[1,0]:<12.3f}|{scales[1,1]:>12.3f}
+    x-velocity      {scales[1]:<12.3f}
                     {sep}
-    y-velocity      {scales[2,0]:<12.3f}|{scales[2,1]:>12.3f}
+    y-velocity      {scales[2]:<12.3f}
                     {sep}
-    Temperature     {scales[3,0]:<12.3e}|{scales[3,1]:>12.3e}
+    Temperature     {scales[3]:<12.3e}
                     {sep}
-    Specific Volume {scales[4,0]:<12.3f}|{scales[4,1]:>12.3f}
+    Specific Volume {scales[4]:<12.3f}
                     {sep}
-    CH4 molar       {scales[5,0]:<12.3f}|{scales[5,1]:>12.3f}
+    CH4 molar       {scales[5]:<12.3f}
                     {sep}
-    O2  molar       {scales[6,0]:<12.3f}|{scales[6,1]:>12.3f}
+    O2  molar       {scales[6]:<12.3f}
                     {sep}
-    H2O molar       {scales[8,0]:<12.3f}|{scales[8,1]:>12.3f}
+    H2O molar       {scales[8]:<12.3f}
                     {sep}
-    CO2 molar       {scales[7,0]:<12.3f}|{scales[7,1]:>12.3f}
+    CO2 molar       {scales[7]:<12.3f}
                     {sep}"""
         logging.info(report)
 
@@ -218,16 +208,16 @@ def unscale(data, scales, variables=None):
     """Unscale data *IN-PLACE* by variable, meaning every chunk of DOF
     consecutive rows is unscaled separately. Thus, DOF / data.shape[0] must be
     an integer. Variable i is assumed to have been previously scaled by
-    variable[i] = (old_variable[i] - scales[i,0]) / scales[i,1].
+    variable[i] = old_variable[i] / scales[i].
 
     Parameters
     ----------
     data : (num_variables*dof, num_snapshots) ndarray
         Dataset to be unscaled.
 
-    scales : (NUM_ROMVARS, 2) ndarray
+    scales : (NUM_ROMVARS,) ndarray
         Shifting and scaling factors. UNscaling is given by
-        new_variable[i] = (variable[i] * scales[i,1]) + scales[i,0].
+        new_variable[i] = variable[i] * scales[i].
 
     variables : list(str)
         List of variables to scale, a subset of config.ROM_VARIABLES.
@@ -239,10 +229,9 @@ def unscale(data, scales, variables=None):
         Unscaled data.
     """
     # Validate the scales.
-    _shape = (config.NUM_ROMVARS, 2)
+    _shape = (config.NUM_ROMVARS,)
     if scales.shape != _shape:
         raise ValueError(f"`scales` must have shape {_shape}")
-    scale_from, scale_to = np.split(scales, 2, axis=1)
 
     # Parse the variables.
     if variables is None:
@@ -261,6 +250,6 @@ def unscale(data, scales, variables=None):
     # Do the unscaling by variable.
     for i,vidx in enumerate(varindices):
         s = slice(i*chunksize,(i+1)*chunksize)
-        data[s] = (data[s] * scales[vidx,1]) + scales[vidx,0]
+        data[s] *= scales[vidx]
 
     return data

@@ -207,7 +207,7 @@ def load_scaled_data(trainsize):
     qbar : (NUM_ROMVARS*DOF,) ndarray
         Mean snapshot of the scaled training data.
 
-    scales : (NUM_ROMVARS,2) ndarray
+    scales : (NUM_ROMVARS,) ndarray
         Factors used to scale the variables.
     """
     # Locate the data.
@@ -227,12 +227,11 @@ def load_scaled_data(trainsize):
                 mean = hf["mean"][:]
             else:
                 mean = np.zeros(hf["data"].shape[0])
-            if hf["scales"].shape != (config.NUM_ROMVARS, 2):
+            if hf["scales"].shape != (config.NUM_ROMVARS,):
                 raise RuntimeError("data set 'scales' has incorrect shape")
 
             # Load and return the data.
-            return (hf["data"][:,:], hf["time"][:],
-                    mean, hf["scales"][:,:])
+            return (hf["data"][:,:], hf["time"][:], mean, hf["scales"][:,:])
 
 
 def load_basis(trainsize, r):
@@ -256,7 +255,7 @@ def load_basis(trainsize, r):
         Mean snapshot that the training data was shifted by after scaling
         but before projection.
 
-    scales : (NUM_ROMVARS,2) ndarray
+    scales : (NUM_ROMVARS,) ndarray
         Factors used to scale the variables before projecting.
     """
     # Locate the data.

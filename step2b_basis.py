@@ -45,7 +45,7 @@ def compute_and_save_pod_basis(num_modes, training_data, qbar, scales):
     qbar : (NUM_ROMVARS*DOF,) ndarray
         Mean snapshot of the scaled training data.
 
-    scales : (NUM_ROMVARS,2) ndarray
+    scales : (NUM_ROMVARS,) ndarray
         Info on how the snapshot data was scaled.
 
     Returns
@@ -112,8 +112,8 @@ def main(trainsize, num_modes):
     Parameters
     ----------
     trainsize : int
-        The number of snapshots to use in the computation. There must
-        exist a file of exactly `trainsize` lifted, scaled snapshots
+        The number of snapshots to use in the computation. There must exist
+        a file of exactly `trainsize` lifted, shifted, scaled snapshots
         (see step2a_transform.py).
 
     num_modes : int or list(int)
@@ -127,10 +127,9 @@ def main(trainsize, num_modes):
     if num_modes == -1:
         # Secret mode! Compute all singular values (EXPENSIVE).
         return compute_and_save_all_svdvals(training_data)
-    else:
-        # Compute and save the (randomized) SVD from the training data.
-        return compute_and_save_pod_basis(num_modes,
-                                          training_data, qbar, scales)
+
+    # Compute and save the (randomized) SVD from the training data.
+    return compute_and_save_pod_basis(num_modes, training_data, qbar, scales)
 
 
 # =============================================================================

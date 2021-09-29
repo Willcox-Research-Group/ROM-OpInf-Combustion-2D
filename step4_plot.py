@@ -76,8 +76,7 @@ def simulate_rom(trainsize, r, regs, steps=None):
         the full-order scaled predictions).
 
     qbar : (NUM_ROMVARS*DOF,) ndarray
-        Mean snapshot that the training data was shifted by after scaling
-        but before projection.
+        Mean snapshot that the training data was shifted by before scaling.
 
     scales : (NUM_ROMVARS,4) ndarray
         Information for how the data was scaled. See data_processing.scale().
@@ -115,9 +114,8 @@ def get_traces(locs, data, V=None, qbar=None, scales=None):
         Rank-r POD basis. Only needed if `data` is low-dimensional ROM output.
 
     qbar : (NUM_ROMVARS*DOF,) ndarray
-        Mean snapshot that the training data was shifted by after scaling
-        but before projection. Only needed if `data` is low-dimensional ROM
-        output.
+        Mean snapshot that the training data was shifted by before scaling.
+        Only needed if `data` is low-dimensional ROM output.
 
     scales : (config.NUM_ROMVARS,4) ndarray or None
         Information for how the data was scaled (see data_processing.scale()).
@@ -130,7 +128,7 @@ def get_traces(locs, data, V=None, qbar=None, scales=None):
     """
     if V is not None and qbar is not None and scales is not None:
         qbar = qbar.reshape((-1,1))
-        return dproc.unscale((V[locs] @ data) + qbar[locs,:], scales)
+        return dproc.unscale((V[locs] @ data), scales) + qbar[locs,:]
     else:
         return data[locs]
 
@@ -152,11 +150,10 @@ def get_feature(key, data, V=None, qbar=None, scales=None):
         Rank-r POD basis. Only needed if data is low-dimensional ROM output.
 
     qbar : (NUM_ROMVARS*DOF,) ndarray
-        Mean snapshot that the training data was shifted by after scaling
-        but before projection. Only needed if `data` is low-dimensional ROM
-        output.
+        Mean snapshot that the training data was shifted by before scaling.
+        Only needed if `data` is low-dimensional ROM output.
 
-    scales : (NUM_ROMVARS,2) ndarray or None
+    scales : (NUM_ROMVARS,) ndarray or None
         Information for how the data was scaled (see data_processing.scale()).
         Only needed if `data` is low-dimensional ROM output.
 
@@ -168,11 +165,11 @@ def get_feature(key, data, V=None, qbar=None, scales=None):
     var, action = key.split('_')
     print(f"{action}({var})", end='..', flush=True)
     if V is not None and qbar is not None and scales is not None:
-        qbar = qbar.reshape((-1,1))
-        data_scaled = (dproc.getvar(var, V) @ data) + dproc.getvar(var, qbar)
-        variable = dproc.unscale(data_scaled, scales, var)
+        qbarvar = dproc.getvar(var, qbar).reshape((-1,1))
+        data_scaled = dproc.getvar(var, V) @ data
+        variable = dproc.unscale(data_scaled, scales, var) + qbarvar
     else:
-        variable = dproc.getvar(var, data)          # noqa
+        variable = dproc.getvar(var, data)
     return eval(f"variable.{action}(axis=0)")
 
 
@@ -284,8 +281,8 @@ def errors_in_time(trainsize, r, regs, cutoff=60000):
 
     # Shift and project the data (unscaling done later by chunk).
     with utils.timed_block("Projecting GEMS data to POD subspace"):
-        data_scaled, _ = dproc.scale(data_gems.copy(), scales)
-        data_proj = V.T @ (data_scaled - qbar)
+        data_scaled, _ = dproc.scale(data_gems - qbar, scales)
+        data_proj = V.T @ data_scaled
         del data_scaled
 
     # Initialize the figure.
@@ -298,8 +295,8 @@ def errors_in_time(trainsize, r, regs, cutoff=60000):
             Vvar = dproc.getvar(var, V)
             gems_var = dproc.getvar(var, data_gems)
             qbarvar = dproc.getvar(var, qbar)
-            proj_var = dproc.unscale((Vvar @ data_proj) + qbarvar, scales, var)
-            pred_var = dproc.unscale((Vvar @ q_rom) + qbarvar, scales, var)
+            proj_var = dproc.unscale(Vvar @ data_proj, scales, var) + qbarvar
+            pred_var = dproc.unscale(Vvar @ q_rom, scales, var) + qbarvar
 
         with utils.timed_block(f"Calculating error in {var}"):
             denom = np.abs(gems_var).max(axis=0)
