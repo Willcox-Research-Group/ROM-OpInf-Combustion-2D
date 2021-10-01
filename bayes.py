@@ -1,5 +1,5 @@
 # bayes.py
-"""Bayesian interpretation of Operator Inference for this problem."""
+"""Bayesian Operator Inference for this problem."""
 
 import logging
 import numpy as np
@@ -32,11 +32,11 @@ class OpInfPosterior:
         Parameters
         ----------
         means : list of r (d,) ndarrays or (r,d) ndarray
-            Mean values for each of the operator entries, i.e., Mean(O).
+            Mean values for each of the operator entries, i.e., Mean(Ohat).
 
         Sigmas : list of r (d,d) ndarrays or (r,d,d) ndarray
             Covariance matrices for each row of the operator matrix.
-            That is, Sigmas[i] = Covariance(O[i])
+            That is, Sigmas[i] = Covariance(Ohat[i])
 
         modelform : str
             Structure of the ROMs to sample.
@@ -108,7 +108,7 @@ class OpInfPosteriorUniformCov(OpInfPosterior):
         Parameters
         ----------
         means : (r,d) ndarray
-            Mean values for each of the operator entries, i.e., E[O].
+            Mean values for each of the operator entries, i.e., E[Ohat].
 
         sigmas : list of r floats or (r,) ndarray
             Scaling factors for each covariance matrix.
@@ -131,7 +131,7 @@ class OpInfPosteriorUniformCov(OpInfPosterior):
     def _sample_operator_matrix(self):
         """Sample an operator matrix from the posterior distribution."""
         rows = [µ + (σ*self._cho) @ np.random.standard_normal(size=self._d)
-                                    for µ, σ in zip(self.means, self._sigmas)]
+                for µ, σ in zip(self.means, self._sigmas)]
         return np.vstack(rows)
 
 
@@ -185,12 +185,12 @@ def construct_posterior(trainsize, r, reg, case=2):
     rom = roi.InferredContinuousROM("cAHB").fit(None, Q_, R, U, reg)
     rom.trainsize = trainsize
     D = rom._assemble_data_matrix(Q_, U)
-    O = rom.O_
+    Ohat = rom.Ohat_
 
     # Check matrix shapes.
     assert D.shape == (trainsize, d)
     assert R.shape == (r, trainsize)
-    assert O.shape == (r, d)
+    assert Ohat.shape == (r, d)
 
     def symmetrize(S, sparsify=False):
         """Numerically symmetrize / sparsify (e.g., for covariance)."""
@@ -202,11 +202,11 @@ def construct_posterior(trainsize, r, reg, case=2):
     with utils.timed_block("Building posterior distribution"):
         # Precompute some quantities for posterior parameters.
         DTD = symmetrize(D.T @ D)
-        Onorm2s = np.sum(O**2, axis=1)                   # ||o_i||^2.
-        residual2s = np.sum((D @ O.T - R.T)**2, axis=0)  # ||Do_i - r_i||^2.
+        Ohatnorm2s = np.sum(Ohat**2, axis=1)                   # ||o_i||^2.
+        residual2s = np.sum((D @ Ohat.T - R.T)**2, axis=0)  # ||Do_i - r_i||^2.
 
-        # print("||o_i||^2:", Onorm2s)
-        # print(f"{Onorm2s.mean()} ± {Onorm2s.std()}")
+        # print("||o_i||^2:", Ohatnorm2s)
+        # print(f"{Ohatnorm2s.mean()} ± {Ohatnorm2s.std()}")
         # print("||Do_i - r_i||^2:", residual2s)
         # print(f"{residual2s.mean()} ± {residual2s.std()}")
         # input("Press ENTER to continue")
@@ -216,8 +216,8 @@ def construct_posterior(trainsize, r, reg, case=2):
             λ2 = reg**2
             Λ = λ2*np.eye(d)
             Σ = symmetrize(la.inv(DTD + Λ), sparsify=True)
-            σ2s = (residual2s + λ2*Onorm2s) / trainsize
-            post = OpInfPosteriorUniformCov(O, np.sqrt(σ2s), Σ, "cAHB")
+            σ2s = (residual2s + λ2*Ohatnorm2s) / trainsize
+            post = OpInfPosteriorUniformCov(Ohat, np.sqrt(σ2s), Σ, "cAHB")
             if case == 1:
                 Σs = np.array([σ2i * Σ for σ2i in σ2s])  # = post.covariances
         else:
@@ -230,19 +230,19 @@ def construct_posterior(trainsize, r, reg, case=2):
             if λ2.shape == (r,):
                 Id = np.eye(d)
                 Λs = [λ2i*Id for λ2i in λ2]
-                σ2s = (residual2s + λ2*Onorm2s) / trainsize
+                σ2s = (residual2s + λ2*Ohatnorm2s) / trainsize
             elif λ2.shape == (r,d):
                 if case not in (-1, 1):
                     raise ValueError("2D reg only compatible with case=1")
                 Λs = [np.diag(λ2i) for λ2i in λ2]
-                σ2s = (residual2s + np.sum(λ2*O**2, axis=1)) / trainsize
+                σ2s = (residual2s + np.sum(λ2*Ohat**2, axis=1)) / trainsize
             else:
                 raise ValueError("invalid shape(reg)")
             assert len(Λs) == len(σ2s) == r
             Σs = np.array([σ2i * symmetrize(la.inv(DTD + Λi), sparsify=True)
                            for σ2i, Λi in zip(σ2s, Λs)])
             post = None
-            post = OpInfPosterior(O, Σs, modelform="cAHB")
+            post = OpInfPosterior(Ohat, Σs, modelform="cAHB")
 
     if case == -1:
         return post
@@ -257,20 +257,20 @@ def construct_posterior(trainsize, r, reg, case=2):
                 assert len(gamma) == r
             # print("Gamma exact:", gamma)
             # print("Gamma estimate (d):", d)
-            λ2_new = gamma*σ2s/Onorm2s
+            λ2_new = gamma*σ2s/Ohatnorm2s
         elif case == 1:
             # TODO: verify and fix. Note use of λ2_new, not λ_new.
-            xi = np.zeros_like(O)
-            badmask = np.ones_like(O, dtype=bool)
+            xi = np.zeros_like(Ohat)
+            badmask = np.ones_like(Ohat, dtype=bool)
             pairs = []
-            for i in range(O.shape[0]):
-                for j in range(O.shape[1]):
-                    pairs.append((Σs[i,j,j], O[i,j]**2))
-                    s = Σs[i,j,j] / O[i,j]**2
+            for i in range(Ohat.shape[0]):
+                for j in range(Ohat.shape[1]):
+                    pairs.append((Σs[i,j,j], Ohat[i,j]**2))
+                    s = Σs[i,j,j] / Ohat[i,j]**2
                     if s < 1:
                         xi[i,j] = 1 - s + s**2 - s**3 + s**4 - s**5 + s**6
                         badmask[i,j] = False
-            λ2_new = (xi / O**2) * σ2s.reshape((-1,1))
+            λ2_new = (xi / Ohat**2) * σ2s.reshape((-1,1))
             λ2_new[badmask] = .01
             assert λ2_new.shape == (r,d)
 
