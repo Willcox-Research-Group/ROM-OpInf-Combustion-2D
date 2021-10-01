@@ -38,13 +38,10 @@ def compute_and_save_pod_basis(num_modes, training_data, qbar, scales):
     ----------
     num_modes : int
         Number of POD modes to compute.
-
     training_data : (NUM_ROMVARS*DOF,trainsize) ndarray
         Training snapshots to take the SVD of.
-
     qbar : (NUM_ROMVARS*DOF,) ndarray
         Mean snapshot of the scaled training data.
-
     scales : (NUM_ROMVARS,) ndarray
         Info on how the snapshot data was scaled.
 
@@ -115,7 +112,6 @@ def main(trainsize, num_modes):
         The number of snapshots to use in the computation. There must exist
         a file of exactly `trainsize` lifted, shifted, scaled snapshots
         (see step2a_transform.py).
-
     num_modes : int or list(int)
         The number of POD modes (left singular vectors) to retain.
     """

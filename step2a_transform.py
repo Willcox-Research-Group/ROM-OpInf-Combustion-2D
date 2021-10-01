@@ -40,7 +40,6 @@ def load_and_lift_gems_data(trainsize):
     -------
     lifted_data : (NUM_ROMVARS*DOF,trainsize) ndarray
         The lifted snapshots.
-
     time_domain : (trainsize,) ndarray
         The time domain corresponding to the lifted snapshots.
     """
@@ -61,10 +60,8 @@ def scale_and_save_data(trainsize, lifted_data, time_domain):
     ----------
     trainsize : int
         Number of snapshots to scale and save.
-
     lifted_data : (NUM_ROMVARS*DOF, k>trainsize) ndarray
         Lifted snapshots to scale and then save.
-
     time_domain : (k>trainsize,) ndarray
         The time domain corresponding to the lifted snapshots.
 
@@ -72,10 +69,8 @@ def scale_and_save_data(trainsize, lifted_data, time_domain):
     -------
     training_data : (NUM_ROMVARS*DOF, trainsize) ndarray
         Scaled, shifted snapshots to use as training data for the basis.
-
     qbar : (NUM_ROMVARS*DOF,) ndarray
         Mean snapshot of the scaled training data.
-
     scales : (NUM_ROMVARS,2) ndarray
         Info on how the snapshot data was scaled.
     """
@@ -86,6 +81,7 @@ def scale_and_save_data(trainsize, lifted_data, time_domain):
         for var in ["p", "T", "xi"]:
             s = dproc._varslice(var, qbar.size)
             qbar[s] = np.mean(shifted_data[s], axis=1)
+            # qbar[s] = np.mean(shifted_data[s])  # JRSNZ approach.
         shifted_data -= qbar.reshape((-1,1))
 
     # Scale the learning variables to [-1, 1] with MaxAbs scaling.

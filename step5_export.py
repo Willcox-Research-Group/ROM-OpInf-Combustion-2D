@@ -78,11 +78,9 @@ def main(timeindices, variables=None, snaptype=("gems", "rom", "error"),
     ----------
     timeindices : ndarray(int) or int
         Indices (one-based) in the full time domain of the snapshots to save.
-
     variables : str or list(str)
         Variables to save, a subset of config.ROM_VARIABLES.
         Defaults to all variables.
-
     snaptype : {"rom", "gems", "error"} or list(str)
         Which kinds of snapshots to save. Options:
         * "gems": snapshots from the full-order GEMS data;
@@ -90,13 +88,10 @@ def main(timeindices, variables=None, snaptype=("gems", "rom", "error"),
         * "error": absolute error between the full-order data
                    and the reduced-order reconstruction.
         If "rom" or "error" are selected, the remaining arguments are required.
-
     trainsize : int
         Number of snapshots used to train the ROM.
-
     r : int
         Number of retained modes in the ROM.
-
     reg : two non-negative floats
         Regularization hyperparameters used to train the ROM.
     """
@@ -208,13 +203,10 @@ def temperature_average(trainsize, r, reg, cutoff=60000):
     ----------
     trainsize : int
         Number of snapshots used to train the ROM.
-
     r : int
         Dimension of the ROM.
-
     reg : float
         Regularization hyperparameters used to train the ROM.
-
     cutoff : int
         Number of time steps to average over.
     """
@@ -292,10 +284,8 @@ def basis(trainsize, r, variables=None):
     ----------
     trainsize : int
         Number of snapshots used to compute the basis.
-
     r : int
         Number of basis vectors to save.
-
     variables : str or list(str)
         Variables to save, a subset of config.ROM_VARIABLES.
         Defaults to all variables.

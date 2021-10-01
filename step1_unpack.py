@@ -66,13 +66,10 @@ def _read_tar_and_save_data(tfile, start, stop, parallel=True):
     ----------
     tfile : str
         Name of a .tar file to read data from.
-
     start : int
         Index of the first snapshot contained in the .tar file.
-
     stop : int
         Index of the last snapshot contained in the .tar file.
-
     parallel : bool
         If True, then only print progress if start == 0 and lock / unlock
         when writing to the HDF5 file.
@@ -137,11 +134,9 @@ def main(data_folder, overwrite=False, serial=False):
     data_folder : str
         Path to the folder that contains the raw GEMS .tar data files,
         preferably as an absolute path (e.g., /path/to/folder).
-
     overwrite : bool
         If False and the snapshot matrix file exists, raise an error.
         If True, overwrite the existing snapshot matrix file if it exists.
-
     serial : bool
         If True, do the unpacking sequentially in 10,000 snapshot chunks.
         If False, do the unpacking in parallel with 10,000 snapshot chunks.

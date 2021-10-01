@@ -54,7 +54,6 @@ def main(trainsize, num_modes):
     ----------
     trainsize : int
         Number of snapshots to lift / scale / save.
-
     num_modes : int or None
         The number of POD modes (left singular vectors) to use in the
         projection. This is the upper bound for the size of ROMs that

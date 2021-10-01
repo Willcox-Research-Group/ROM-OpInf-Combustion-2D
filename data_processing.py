@@ -86,7 +86,6 @@ def _varslice(varname, datasize):
     datasize : int
         Number of rows (2D) or entries (1D) of data, e.g., data.shape[0].
         Must be a multiple of config.NUM_ROMVARS.
-
     varname : str
         An entry of config.ROM_VARIABLES indicating the variable to get/set.
 
@@ -123,11 +122,9 @@ def scale(data, scales=None, variables=None):
     ----------
     data : (num_variables*DOF, num_snapshots) ndarray
         Dataset to be scaled.
-
     scales : (NUM_ROMVARS,) ndarray or None
         Scaling factors. If None, learn the factors from the data:
             scales[i] = max(abs(raw_variable[i])).
-
     variables : list(str)
         List of variables to scale, a subset of config.ROM_VARIABLES.
         This argument can only be given when `scales` is provided as well.
@@ -137,7 +134,6 @@ def scale(data, scales=None, variables=None):
     -------
     scaled_data : (num_variables*DOF, num_snapshots)
         Scaled data.
-
     scales : (NUM_ROMVARS,) ndarray
         Dilation factors used to scale the data.
     """
@@ -214,11 +210,9 @@ def unscale(data, scales, variables=None):
     ----------
     data : (num_variables*dof, num_snapshots) ndarray
         Dataset to be unscaled.
-
     scales : (NUM_ROMVARS,) ndarray
         Shifting and scaling factors. UNscaling is given by
         new_variable[i] = variable[i] * scales[i].
-
     variables : list(str)
         List of variables to scale, a subset of config.ROM_VARIABLES.
         This requires `data.shape[0]` to be divisible by `len(variables)`.

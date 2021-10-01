@@ -45,7 +45,6 @@ def print_rom_index(folder, clean=False):
     ----------
     folder : str
         Path to the folder to be examined, e.g,. BASE_FOLDER/k1000/.
-
     clean : bool
         If True, remove ROM files that are not listed in the ROM index and
         remove ROM index entries that do not have corresponding ROM files.
@@ -101,6 +100,7 @@ def print_rom_index(folder, clean=False):
 
 
 def print_trainsize_folder(folder, clean=False):
+    """Print a folder grouping data for one choice of training size (k)."""
     trainsize = _get_trn(folder)
     print(f"    Train size = {trainsize} ({os.path.basename(folder)}/)")
     for dfile in _sglob(os.path.join(folder, "*.h5")):
@@ -117,6 +117,7 @@ def print_trainsize_folder(folder, clean=False):
 
 
 def main(clean=False):
+    """Display (and clean up) file storage starting from BASE_FOLDER."""
     print(f"BASE FOLDER: ({config.BASE_FOLDER}/)")
     for dfile in _sglob(os.path.join(config.BASE_FOLDER, "*.h5")):
         basename = os.path.basename(dfile)
