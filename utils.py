@@ -451,5 +451,5 @@ def save_figure(figname):
     save_path = os.path.join(config.figures_path(), figname)
     # plt.show() # Uncomment to display figure before saving.
     with timed_block(f"Saving {save_path}"):
-        plt.savefig(save_path, bbox_inches="tight", dpi=200)
+        plt.savefig(save_path, bbox_inches="tight", dpi=250)
         plt.close(plt.gcf())

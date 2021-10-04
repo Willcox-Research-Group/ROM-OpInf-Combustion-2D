@@ -11,16 +11,9 @@ import rom_operator_inference as roi
 import config
 import utils
 import step3_train as step3
-import step4_plot as step4
-import data_processing as dproc
 
 
-LABELSIZE = 18
-TITLESIZE = 16
-TICKSIZE = 14
-
-
-# Operator Inference posterior samplers =======================================
+# Posterior samplers ==========================================================
 
 class OpInfPosterior:
     """Convenience class for sampling the posterior distribution, which
@@ -31,13 +24,11 @@ class OpInfPosterior:
 
         Parameters
         ----------
-        means : list of r (d,) ndarrays or (r,d) ndarray
+        means : (r,d) ndarray
             Mean values for each of the operator entries, i.e., Mean(Ohat).
-
-        Sigmas : list of r (d,d) ndarrays or (r,d,d) ndarray
+        Sigmas : (r,d,d) ndarray
             Covariance matrices for each row of the operator matrix.
             That is, Sigmas[i] = Covariance(Ohat[i])
-
         modelform : str
             Structure of the ROMs to sample.
         """
@@ -109,10 +100,8 @@ class OpInfPosteriorUniformCov(OpInfPosterior):
         ----------
         means : (r,d) ndarray
             Mean values for each of the operator entries, i.e., E[Ohat].
-
         sigmas : list of r floats or (r,) ndarray
             Scaling factors for each covariance matrix.
-
         Sigma : (d,d) ndarray
             Nonscaled covariance matrix for each posterior.
         """
@@ -146,18 +135,15 @@ def construct_posterior(trainsize, r, reg, case=2):
     trainsize : int
         The number of snapshots used to train the ROM. This is also the number
         of snapshots that were used when the POD basis (SVD) was computed.
-
     r : int
         The dimension of the ROM. This is also the number of retained POD modes
         (left singular vectors) used to project the training data.
-
     reg : float or (r,) ndarray or (r,d) ndarray
         The regularization parameter(s) used in the Operator Inference
         least-squares problem for training the ROM.
         * float: Λ = λi I
         * (r,) ndarray: Λi = λi I
         * (r,d) ndarray: Λi = diag(λi1,...,λid) (requires case=1)
-
     case : int
         How to treat the regularization update.
         * 2: learn a new λ for each ROW of the operator matrix.
@@ -176,7 +162,7 @@ def construct_posterior(trainsize, r, reg, case=2):
     """
     d = 1 + r + r*(r+1)//2 + 1
     if isinstance(reg, tuple) and len(reg) == 2:
-        reg = step3.regularizer(r, d, reg[0], reg[1])
+        reg = step3.regularizer(r, reg[0], reg[1])
 
     # Get the data matrix and solve the Operator Inference problem,
     # using the initial guess for the regularization parameter(s).
@@ -185,7 +171,7 @@ def construct_posterior(trainsize, r, reg, case=2):
     rom = roi.InferredContinuousROM("cAHB").fit(None, Q_, R, U, reg)
     rom.trainsize = trainsize
     D = rom._assemble_data_matrix(Q_, U)
-    Ohat = rom.Ohat_
+    Ohat = rom.O_
 
     # Check matrix shapes.
     assert D.shape == (trainsize, d)
@@ -202,7 +188,7 @@ def construct_posterior(trainsize, r, reg, case=2):
     with utils.timed_block("Building posterior distribution"):
         # Precompute some quantities for posterior parameters.
         DTD = symmetrize(D.T @ D)
-        Ohatnorm2s = np.sum(Ohat**2, axis=1)                   # ||o_i||^2.
+        Ohatnorm2s = np.sum(Ohat**2, axis=1)                # ||o_i||^2.
         residual2s = np.sum((D @ Ohat.T - R.T)**2, axis=0)  # ||Do_i - r_i||^2.
 
         # print("||o_i||^2:", Ohatnorm2s)
@@ -286,27 +272,26 @@ def construct_posterior(trainsize, r, reg, case=2):
     return post, np.sqrt(λ2_new)
 
 
-# -----------------------------------------------------------------------------
+# Posterior simulation ========================================================
 def simulate_posterior(trainsize, post, ndraws=10, steps=None):
     """
     Parameters
     ----------
-    rom : ...
-
+    rom :
+        TODO
     post : OpInfPosterior
-
+        TODO
     ndraws : int
-
+        TODO
     steps : int
+        TODO
 
     Returns
     -------
     q_rom_mean : (r,steps) ndarray
         TODO
-
     q_roms : list
         TODO
-
     scales : ndarray
         TODO
     """
@@ -322,246 +307,15 @@ def simulate_posterior(trainsize, post, ndraws=10, steps=None):
     q_roms = []
     i, failures = 0, 0
     while i < ndraws:
-        with utils.timed_block(f"Simulating posterior draw ROM {i+1:03d}"):
+        with utils.timed_block(f"Simulating posterior draw ROM {i+1:0>3d}"):
             q_rom = post.predict(q0, t)
             if q_rom.shape[1] == t.shape[0]:
                 q_roms.append(q_rom)
                 i += 1
             else:
+                print("UNSTABLE...", end='')
                 failures += 1
     if failures:
         logging.info(f"TOTAL FAILURES: {failures}")
 
     return q_rom_mean, q_roms
-
-
-# Main routines ===============================================================
-
-def plot_mode_uncertainty(trainsize, mean, draws, modes=4):
-    steps = mean.shape[1]
-    t = utils.load_time_domain(steps)
-
-    if len(draws) > 0:
-        with utils.timed_block("Calculating sample deviations"):
-            deviations = np.std(draws, axis=0)
-
-    fig, axes = plt.subplots(modes//2, 2, figsize=(12,5), sharex=True)
-    for i, ax in zip(range(modes), axes.flat):
-        ax.plot(t, mean[i,:], 'C0-', lw=1, label=r"$\mu$")
-        # for draw in draws:
-        #     ax.plot(t, draw[i,:], 'C0-', lw=.5, alpha=.2)
-        if len(draws) > 0:
-            ax.fill_between(t,
-                            mean[i,:] - 3*deviations[i,:],
-                            mean[i,:] + 3*deviations[i,:],
-                            alpha=.5, label=r"$\mu \pm 3\sigma$")
-        if steps > trainsize:
-            ax.axvline(t[trainsize], color='k', lw=1)
-        ax.set_ylabel(fr"$\hat{{q}}_{{{i+1}}}(t)$", fontsize=LABELSIZE)
-        ax.set_xlim(t[0], t[-1])
-        ax.set_xticks(np.arange(t[0], t[-1]+.001, .001))
-        ax.tick_params(axis="both", which="major", labelsize=TICKSIZE)
-    for ax in axes[-1]:
-        ax.set_xlabel(r"Time [s]", fontsize=LABELSIZE)
-
-    # Single legend below the subplots.
-    fig.tight_layout(rect=[0, .05, 1, 1])
-    fig.subplots_adjust(hspace=.2, wspace=.2)
-    leg = axes[0,0].legend(loc="lower center", fontsize=LABELSIZE, ncol=2,
-                           bbox_to_anchor=(.5,0),
-                           bbox_transform=fig.transFigure)
-    for line in leg.get_lines():
-        line.set_linewidth(2)
-
-    for j in range(axes.shape[1]):
-        fig.align_ylabels(axes[:,j])
-
-
-def plot_pointtrace_uncertainty(trainsize, mean, draws, var="p"):
-    """
-
-    Parameters
-    ----------
-
-    Returns
-    -------
-    """
-    if var not in ["p", "vx", "vy", "T"]:
-        raise NotImplementedError(f"var='{var}'")
-
-    # Get the indicies for each variable.
-    elems = np.atleast_1d(config.MONITOR_LOCATIONS)
-    nelems = elems.size
-    elems = elems + config.ROM_VARIABLES.index(var)*config.DOF
-
-    # Load the true pressure traces and the time domain.
-    traces_gems, t = utils.load_gems_data(rows=elems)
-    steps = mean.shape[1]
-    t = t[:steps]
-    traces_gems = traces_gems[:,:steps]
-
-    # Load the basis rows corresponding to the pressure traces.
-    V, scales = utils.load_basis(trainsize, mean.shape[0])
-    Velems = V[elems]
-
-    # Reconstruct and rescale the simulation results.
-    with utils.timed_block("Reconstructing simulation results"):
-        traces_rom_mean = dproc.unscale(Velems @ mean, scales, var)
-        traces_rom_draws = [dproc.unscale(Velems @ draw, scales, var)
-                            for draw in draws]
-
-    with utils.timed_block("Calculating sample deviations"):
-        deviations = np.std(traces_rom_draws, axis=0)
-
-    fig, axes = plt.subplots(nelems//2, 2, figsize=(12,5), sharex=True)
-    for i, ax in enumerate(axes.flat):
-        ax.plot(t, traces_gems[i,:], lw=1, **config.GEMS_STYLE)
-        ax.plot(t, traces_rom_mean[i,:], 'C0--', lw=1,
-                label=r"OpInf ROM ($\mu$)")
-        # for draw in traces_rom_draws:
-        #     ax.plot(t, draw[i,:], 'C0-', lw=.5, alpha=.25)
-        ax.fill_between(t,
-                        traces_rom_mean[i,:] - 3*deviations[i,:],
-                        traces_rom_mean[i,:] + 3*deviations[i,:],
-                        alpha=.5, label=r"OpInf ROM ($\mu \pm 3\sigma$)")
-        ax.axvline(t[trainsize], color='k', lw=1)
-        ax.set_xlim(t[0], t[-1])
-        ax.set_xticks(np.arange(t[0], t[-1]+.001, .001))
-        ax.tick_params(axis="both", which="major", labelsize=TICKSIZE)
-        ax.set_title(f"Location ${i+1}$", fontsize=TITLESIZE)
-        ax.locator_params(axis='y', nbins=2)
-
-    # Time label below lowest axis.
-    for ax in axes[-1]:
-        ax.set_xlabel("Time [s]", fontsize=LABELSIZE)
-
-    # Single variable label on the left.
-    ax_invis = fig.add_subplot(1, 1, 1, frameon=False)
-    ax_invis.tick_params(labelcolor="none", bottom=False, left=False)
-    ax_invis.set_ylabel(config.VARLABELS[var], labelpad=20, fontsize=LABELSIZE)
-
-    # Single legend below the subplots.
-    fig.tight_layout(rect=[0, .05, 1, 1])
-    fig.subplots_adjust(hspace=.25, wspace=.15)
-    leg = axes[0,0].legend(loc="lower center", fontsize=LABELSIZE, ncol=3,
-                           bbox_to_anchor=(.525,0),
-                           bbox_transform=fig.transFigure)
-    for line in leg.get_lines():
-        line.set_linewidth(2)
-
-
-def plot_speciesintegral_uncertainty(trainsize, mean, draws):
-    """
-
-    Parameters
-    ----------
-    trainsize : int
-
-    mean : (r,k) ndarray
-
-    draws : (s,r,k) ndarray?
-
-    Returns
-    -------
-    """
-    # Load the true spatial statistics and the time domain.
-    steps = mean.shape[1]
-    keys = ["CH4_sum", "O2_sum", "H2O_sum", "CO2_sum"]
-    integrals_gems, t = utils.load_spatial_statistics(keys, steps)
-
-    # Load the basis.
-    V, scales = utils.load_basis(trainsize, mean.shape[0])
-
-    fig, axes = plt.subplots(len(keys), 1, figsize=(9,9), sharex=True)
-    for key, ax in zip(keys, axes.flat):
-        var, action = key.split('_')
-        with utils.timed_block(f"Reconstructing {key}"):
-            integral_rom_mean = step4.get_feature(key, mean, V, scales)
-            integrals_rom_draws = [step4.get_feature(key, draw, V, scales)
-                                   for draw in draws]
-            deviation = np.std(integrals_rom_draws, axis=0)
-        ax.plot(t, integrals_gems[key], lw=1, **config.GEMS_STYLE)
-        ax.plot(t, integral_rom_mean, 'C0--', lw=1, label=r"OpInf ROM ($\mu$)")
-        # for draw in integral_rom_draws:
-        #     ax.plot(t, draw[i,:], 'C0-', lw=.5, alpha=.25)
-        ax.fill_between(t,
-                        integral_rom_mean - 3*deviation,
-                        integral_rom_mean + 3*deviation,
-                        alpha=.5, label=r"OpInf ROM ($\mu \pm 3\sigma$)")
-        ax.axvline(t[trainsize], color='k', lw=1)
-        ax.set_xlim(t[0], t[-1])
-        ax.set_xticks(np.arange(t[0], t[-1]+.001, .001))
-        ax.set_title(config.VARTITLES[var], fontsize=TITLESIZE)
-        ax.tick_params(axis="both", which="major", labelsize=TICKSIZE)
-        ax.locator_params(axis='y', nbins=2)
-
-    # Time label below lowest axis.
-    axes[-1].set_xlabel("Time [s]", fontsize=LABELSIZE)
-
-    # Single variable label on the left.
-    ax_invis = fig.add_subplot(111, frameon=False)
-    ax_invis.tick_params(labelcolor="none", bottom=False, left=False)
-    ax_invis.set_ylabel(f"Specied Concentration Integrals "
-                        f"[{config.VARUNITS[var]}]",
-                        labelpad=20, fontsize=LABELSIZE)
-
-    # Single legend below the subplots.
-    fig.tight_layout(rect=[0, .05, 1, 1])
-    fig.subplots_adjust(hspace=.225)
-    leg = axes[0].legend(loc="lower center", fontsize=LABELSIZE, ncol=3,
-                         bbox_to_anchor=(.525,0),
-                         bbox_transform=fig.transFigure)
-    for line in leg.get_lines():
-        line.set_linewidth(2)
-
-
-def main(trainsize, r, reg, ndraws=10, steps=50000, modes=4):
-    utils.reset_logger(trainsize)
-    post = construct_posterior(trainsize, r, reg, case=-1)
-    mean, draws = simulate_posterior(trainsize, post, ndraws, steps)
-    plot_mode_uncertainty(trainsize, mean, draws, modes)
-    utils.save_figure(f"bayes/bayes_first{modes}modes.pdf")
-    plot_pointtrace_uncertainty(trainsize, mean, draws, var="p")
-    utils.save_figure("bayes/bayes_traces_pressure.pdf")
-    plot_pointtrace_uncertainty(trainsize, mean, draws, var="vx")
-    utils.save_figure("bayes/bayes_traces_xvelocity.pdf")
-    # plot_speciesintegral_uncertainty(trainsize, mean, draws)
-    # utils.save_figure("bayes/bayes_species_integrals.pdf")
-
-
-def iterate(trainsize, r, reg, niter, case=2):
-    """Do the iteration several times, plotting the evolution thereof."""
-    utils.reset_logger(trainsize)
-    print(f"Initialization: reg = {reg}")
-    means = np.empty(niter+1, dtype=float)
-    stds = means.copy()
-    means[0], stds[0] = reg**2, 0
-    iterations = np.arange(niter+1)
-    for n in iterations[1:]:
-        post, reg = construct_posterior(trainsize, r, reg, case=case)
-        print(f"Iteration {n}: reg = {reg}")
-        means[n], stds[n] = np.mean(reg**2), np.std(reg**2)
-    print("Relative change in mean at final update:",
-          f"{abs(means[-1] - means[-2]) / abs(means[-1]):%}")
-
-    # Plot progression of regularization statistics.
-    plt.semilogy(iterations, means, 'C0.-', ms=10)
-    plt.fill_between(iterations, means-stds, means+stds,
-                     color="C0", alpha=.5)
-    plt.xlabel("Bayes Iteration")
-    plt.ylabel(r"Regularization $\lambda$ ($\mu \pm \sigma$)")
-    plt.title("Iterative Bayesian Regularization Update: Combustion")
-    plt.xlim(right=niter)
-    utils.save_figure(f"bayes/iteration_case{case}.pdf")
-
-    # Try simulating the final model.
-    mean, draws = simulate_posterior(trainsize, post, 0, trainsize)
-    plot_mode_uncertainty(trainsize, mean, draws, 4)
-    utils.save_figure(f"bayes/iter{case}_first4modes.pdf")
-
-
-# =============================================================================
-if __name__ == "__main__":
-    main(20000, 36, (155,11777), 100, 40000, 4)
-    # main(20000, 43, (316,18199), 100, 40000, 4)
-    # iterate(20000, 40, 36382, 15, case=2)
