@@ -80,8 +80,8 @@ def scale_and_save_data(trainsize, lifted_data, time_domain):
         qbar = np.zeros(shifted_data.shape[0])
         for var in ["p", "T", "xi"]:
             s = dproc._varslice(var, qbar.size)
-            qbar[s] = np.mean(shifted_data[s], axis=1)
-            # qbar[s] = np.mean(shifted_data[s])  # JRSNZ approach.
+            # qbar[s] = np.mean(shifted_data[s], axis=1)  # Shift by profile.
+            qbar[s] = np.mean(shifted_data[s])            # Shift by scalar.
         shifted_data -= qbar.reshape((-1,1))
 
     # Scale the learning variables to [-1, 1] with MaxAbs scaling.
