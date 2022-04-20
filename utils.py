@@ -67,6 +67,7 @@ class timed_block:
     This is a test...done in 2.00 s.
     """
     def __init__(self, message):
+        """Store message."""
         self.message = message
 
     def __enter__(self):
@@ -117,7 +118,6 @@ def load_gems_data(rows=None, cols=None):
     rows : int, slice, or (nrows,) ndarray of integer indices
         Which rows (spatial locations) to extract from the data (default all).
         If an integer, extract the first `rows` rows.
-
     cols : int or slice
         Which columns (temporal points) to extract from the data (default all).
         If an integer, extract the first `cols` columns.
@@ -126,7 +126,6 @@ def load_gems_data(rows=None, cols=None):
     -------
     gems_data : (nrows,ncols) ndarray
         The indicated rows / columns of the data.
-
     time_domain : (ncols,) ndarray
         The time (in seconds) associated with each column of extracted data.
     """
@@ -200,14 +199,11 @@ def load_scaled_data(trainsize):
     -------
     Q : (NUM_ROMVARS*DOF,trainsize) ndarray
         Lifted, scaled, shifted data.
-
     time_domain : (trainsize) ndarray
         Time domain corresponding to the lifted, scaled data.
-
     qbar : (NUM_ROMVARS*DOF,) ndarray
         Mean snapshot of the scaled training data.
-
-    scales : (NUM_ROMVARS,2) ndarray
+    scales : (NUM_ROMVARS,) ndarray
         Factors used to scale the variables.
     """
     # Locate the data.
@@ -227,12 +223,11 @@ def load_scaled_data(trainsize):
                 mean = hf["mean"][:]
             else:
                 mean = np.zeros(hf["data"].shape[0])
-            if hf["scales"].shape != (config.NUM_ROMVARS, 2):
+            if hf["scales"].shape != (config.NUM_ROMVARS,):
                 raise RuntimeError("data set 'scales' has incorrect shape")
 
             # Load and return the data.
-            return (hf["data"][:,:], hf["time"][:],
-                    mean, hf["scales"][:,:])
+            return (hf["data"][:], hf["time"][:], mean, hf["scales"][:])
 
 
 def load_basis(trainsize, r):
@@ -242,7 +237,6 @@ def load_basis(trainsize, r):
     ----------
     trainsize : int
         Number of snapshots used when the SVD was computed.
-
     r : int
         Number of left singular vectors to load.
 
@@ -251,12 +245,10 @@ def load_basis(trainsize, r):
     V : (NUM_ROMVARS*DOF,r) ndarray
         POD basis of rank `r`, i.e., the first `r` left singular vectors of
         the training data.
-
     qbar : (NUM_ROMVARS*DOF,) ndarray
         Mean snapshot that the training data was shifted by after scaling
         but before projection.
-
-    scales : (NUM_ROMVARS,2) ndarray
+    scales : (NUM_ROMVARS,) ndarray
         Factors used to scale the variables before projecting.
     """
     # Locate the data.
@@ -294,7 +286,6 @@ def load_projected_data(trainsize, r):
     trainsize : int
         Number of snapshots to load. This is also the number of
         snapshots that were used when the POD basis (SVD) was computed.
-
     r : int
         Number of retained POD modes used in the projection.
 
@@ -302,10 +293,8 @@ def load_projected_data(trainsize, r):
     -------
     Q_ : (r,trainsize) ndarray
         Lifted, scaled, projected snapshots.
-
     Qdot_ : (r,trainsize) ndarray
         Velocity snapshots corresponding to Q_.
-
     time_domain : (trainsize) ndarray
         Time domain corresponding to the lifted, scaled data.
     """
@@ -339,11 +328,9 @@ def load_rom(trainsize, r, regs):
     trainsize : int
         Number of snapshots used to train the ROM. This is also the number
         of snapshots that were used when the POD basis (SVD) was computed.
-
     r : int
         Dimension of the ROM. Also the number of retained POD modes (left
         singular vectors) used to project the training data.
-
     regs : one, two, or three positive floats
         Regularization hyperparameters used in the Operator Inference
         least-squares problem for training the ROM.
@@ -388,7 +375,6 @@ def load_spatial_statistics(keys, k=None):
         * "T_mean" -> spatially averaged temperature
         * "vx_min" -> minimum x-velocity
         * "CH4_sum" -> methane molar concentration integral
-
     k : int, slice, or one-dimensional ndarray of sorted integer indices
         Number of time steps of data to load (default all).
 
@@ -397,7 +383,6 @@ def load_spatial_statistics(keys, k=None):
     features : dict(str -> (k,) ndarray) or (k,) ndarray
         Dictionary of statistical feature arrays with keys `keys`.
         If only one key is given, return the actual array, not a dict.
-
     t : (k,) ndarray
         Time domain corresponding to the statistical features.
     """
@@ -466,5 +451,5 @@ def save_figure(figname):
     save_path = os.path.join(config.figures_path(), figname)
     # plt.show() # Uncomment to display figure before saving.
     with timed_block(f"Saving {save_path}"):
-        plt.savefig(save_path, bbox_inches="tight", dpi=1200)
+        plt.savefig(save_path, bbox_inches="tight", dpi=250)
         plt.close(plt.gcf())

@@ -40,7 +40,6 @@ def load_and_lift_gems_data(trainsize):
     -------
     lifted_data : (NUM_ROMVARS*DOF,trainsize) ndarray
         The lifted snapshots.
-
     time_domain : (trainsize,) ndarray
         The time domain corresponding to the lifted snapshots.
     """
@@ -54,50 +53,44 @@ def load_and_lift_gems_data(trainsize):
     return lifted_data, time_domain
 
 
-def scale_and_save_data(trainsize, lifted_data, time_domain, center=False):
+def scale_and_save_data(trainsize, lifted_data, time_domain):
     """Scale lifted snapshots (by variable) and save the scaled snapshots.
 
     Parameters
     ----------
     trainsize : int
         Number of snapshots to scale and save.
-
     lifted_data : (NUM_ROMVARS*DOF, k>trainsize) ndarray
         Lifted snapshots to scale and then save.
-
     time_domain : (k>trainsize,) ndarray
         The time domain corresponding to the lifted snapshots.
-
-    center : bool
-        If True, center the scaled snapshots by the mean scaled snapshot
-        before computing the POD basis. Default False (no shift).
 
     Returns
     -------
     training_data : (NUM_ROMVARS*DOF, trainsize) ndarray
         Scaled, shifted snapshots to use as training data for the basis.
-
     qbar : (NUM_ROMVARS*DOF,) ndarray
-        Mean snapshot of the scaled training data. All zeros if center=False.
-
+        Mean snapshot of the scaled training data.
     scales : (NUM_ROMVARS,2) ndarray
         Info on how the snapshot data was scaled.
     """
-    # Scale the learning variables to the bounds in config.SCALE_TO.
-    with utils.timed_block(f"Scaling {trainsize:d} lifted snapshots"):
-        training_data, scales = dproc.scale(lifted_data[:,:trainsize].copy())
+    # Shift the lifted data by the mean in the variables p, T, and xi.
+    with utils.timed_block("Shifting snapshots by mean profile"):
+        shifted_data = lifted_data[:,:trainsize].copy()
+        qbar = np.zeros(shifted_data.shape[0])
+        for var in ["p", "T", "xi"]:
+            s = dproc._varslice(var, qbar.size)
+            # qbar[s] = np.mean(shifted_data[s], axis=1)  # Shift by profile.
+            qbar[s] = np.mean(shifted_data[s])            # Shift by scalar.
+        shifted_data -= qbar.reshape((-1,1))
 
-    # Shift the scaled data by the mean snapshot.
-    if center:
-        with utils.timed_block("Shifting scaled snapshots by mean"):
-            qbar = np.mean(training_data, axis=1)   # Compute mean snapshot.
-            training_data -= qbar.reshape((-1,1))   # Shift columns by mean.
-    else:
-        qbar = np.zeros(training_data.shape[0])
+    # Scale the learning variables to [-1, 1] with MaxAbs scaling.
+    with utils.timed_block(f"Scaling {trainsize:d} lifted, shifted snapshots"):
+        training_data, scales = dproc.scale(shifted_data)
 
-    # Save the lifted, scaled training data.
+    # Save the lifted, shifted, scaled training data.
     save_path = config.scaled_data_path(trainsize)
-    with utils.timed_block("Saving scaled, lifted training data"):
+    with utils.timed_block("Saving lifted, shifted, scaled training data"):
         with h5py.File(save_path, 'w') as hf:
             hf.create_dataset("data", data=training_data)
             hf.create_dataset("time", data=time_domain[:trainsize])
@@ -108,17 +101,13 @@ def scale_and_save_data(trainsize, lifted_data, time_domain, center=False):
     return training_data, qbar, scales
 
 
-def main(trainsizes, center=False):
+def main(trainsizes):
     """Lift and scale the GEMS simulation training data and save the results.
 
     Parameters
     ----------
     trainsizes : int or list(int)
         Number of snapshots to lift, scale, and save.
-
-    center : bool
-        If True, center the scaled snapshots by the mean scaled snapshot
-        before computing the POD basis.
     """
     utils.reset_logger()
 
@@ -131,7 +120,7 @@ def main(trainsizes, center=False):
     # Scale and save each subset of lifted data.
     for trainsize in trainsizes:
         utils.reset_logger(trainsize)
-        scale_and_save_data(trainsize, lifted_data, time_domain, center)
+        scale_and_save_data(trainsize, lifted_data, time_domain)
 
 
 # =============================================================================
@@ -141,12 +130,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.usage = f""" python3 {__file__} --help
-        python3 {__file__} TRAINSIZE [...] [--center]"""
+        python3 {__file__} TRAINSIZE [...]"""
     parser.add_argument("trainsize", type=int, nargs='+',
                         help="number of snapshots to lift, scale, and save")
-    parser.add_argument("--center", action="store_true",
-                        help="shift by the mean snapshot after scaling")
 
     # Do the main routine.
     args = parser.parse_args()
-    main(args.trainsize, center=args.center)
+    main(args.trainsize)

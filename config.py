@@ -59,7 +59,7 @@ def REGFMT(λs):
 
 
 def REGSTR(λs):
-    """[x,y,z] -> 'λ1=x, λ2=y, λ3=z'"""
+    """[x,y,z] -> 'λ1=x, λ2=y, λ3=z'."""
     if np.isscalar(λs):
         return f"λ={λs:5e}"
     return ", ".join(f"λ{i+1}={λ:4e}" for i,λ in enumerate(λs))
@@ -215,15 +215,12 @@ def rom_path(trainsize, r, regs, overwrite=False):
     trainsize : int
         Number of snapshots used to train the ROM. This is also the number
         of snapshots that were used when the POD basis (SVD) was computed.
-
     r : int
         Dimension of the ROM. Also the number of retained POD modes (left
         singular vectors) used to project the training data.
-
     regs : one, two, or three positive floats
         Regularization hyperparameters used in the Operator Inference
         least-squares problem for training the ROM.
-
     overwrite : bool
         If True, make a new ROM filename and overwrite any previous instances
         with the same trainsize, r, and regs in the ROM index.

@@ -42,7 +42,6 @@ def mass2molar(masses, xi):
     ----------
     masses : list of NUM_SPECIES (domain_size, num_snapshots) ndarrays
         Mass fractions for each of the chemical species.
-
     xi : (domain_size, num_snapshots) ndarray
         Specific volume of the mixture [m^3/kg]
 
@@ -69,7 +68,6 @@ def molar2mass(molars, xi):
     ----------
     molars : list of NUM_SPECIES (domain_size, num_snapshots) ndarrays
         Molar concentrations for each chemical species [mol/m^3].
-
     xi : (domain_size, num_snapshots) ndarray
         Secific volume (1/density) [m^3/kg].
 
@@ -117,10 +115,8 @@ def specific_volume(p, T, masses):
     ----------
     p : (domain_size, num_snapshots) ndarray
         Pressure [Pa = kg/ms^2].
-
     T : (domain_size, num_snapshots) ndarray
         Temperature [K].
-
     masses : list of NUM_SPECIES (domain_size, num_snapshots) ndarrays
         Mass fractions for each of the chemical species.
 
@@ -146,10 +142,8 @@ def temperature(p, xi, molars):
     ----------
     p : (domain_size, num_snapshots) ndarray
         Pressure [Pa = kg/ms^2].
-
     xi : (domain_size, num_snapshots) ndarray
         Specific volume (1/density). Called xi in the paper.
-
     molars : list of NUM_SPECIES (domain_size, num_snapshots) ndarrays
         Molar concentrations for each chemical species [mol/m^3].
 

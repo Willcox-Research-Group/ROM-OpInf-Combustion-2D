@@ -137,13 +137,10 @@ def regularizer(r, λ1, λ2, λ3=None):
     ----------
     r : int
         Dimension of the ROM.
-
     λ1 : float
         Regularization hyperparameter for the non-quadratic operators.
-
     λ2 : float
         Regularization hyperparameter for the quadratic operator.
-
     λ2 : float or None
         Regularization hyperparameter for the cubic operator (if present).
 
@@ -173,7 +170,6 @@ def is_bounded(q_rom, B, message="bound exceeded"):
     ----------
     q_rom : (r,len(time_domain)) ndarray
         Integrated POD modes, i.e., the direct result of integrating a ROM.
-
     B : float > 0
         The bound that the integrated POD coefficients must satisfy.
     """
@@ -191,15 +187,12 @@ def save_trained_rom(trainsize, r, regs, rom):
     ----------
     trainsize : int
         Number of snapshots used to train the ROM.
-
     r : int
         Dimension of the ROM. Also the number of retained POD modes
         (left singular vectors) used to project the training data.
-
     regs : two or three non-negative floats
         regularization hyperparameters (first-order, quadratic, cubic) used
         in the Operator Inference least-squares problem for training the ROM.
-
     rom : rom_operator_inference.InferredContinuousROM
         Actual trained ROM object. Must have a `save_model()` method.
     """
@@ -218,11 +211,9 @@ def train_single(trainsize, r, regs):
     ----------
     trainsize : int
         Number of snapshots to use to train the ROM.
-
     r : int
         Dimension of the desired ROM. Also the number of retained POD modes
         (left singular vectors) used to project the training data.
-
     regs : two or three non-negative floats
         Regularization hyperparameters (first-order, quadratic, cubic) to use
         in the Operator Inference least-squares problem for training the ROM.
@@ -255,24 +246,25 @@ def train_gridsearch(trainsize, r, regs, testsize=None, margin=1.1):
     ----------
     trainsize : int
         Number of snapshots to use to train the ROM.
-
     r : int
         Dimension of the desired ROM. Also the number of retained POD modes
         (left singular vectors) used to project the training data.
-
     regs : (float, float, int, float, float, int)
         Bounds and sizes for the grid of regularization hyperparameters.
         First-order: search in [regs[0], regs[1]] at regs[2] points.
         Quadratic:   search in [regs[3], regs[4]] at regs[5] points.
         Cubic:       search in [regs[6], regs[7]] at regs[8] points.
-
     testsize : int
         Number of time steps for which a valid ROM must satisfy the POD bound.
-
     margin : float ≥ 1
         Amount that the integrated POD coefficients of a valid ROM are allowed
         to deviate in magnitude from the maximum magnitude of the training
         data Q, i.e., bound = margin * max(abs(Q)).
+
+    Returns
+    -------
+    regs : ndarray
+        Regularization hyperparameter winners.
     """
     utils.reset_logger(trainsize)
 
@@ -334,10 +326,9 @@ def train_gridsearch(trainsize, r, regs, testsize=None, margin=1.1):
 
     err2reg = {err:reg for reg,err in errors_pass.items()}
     regs = list(err2reg[min(err2reg.keys())])
-    with utils.timed_block(f"Best regularization for k={trainsize:d}, "
-                           f"r={r:d}: {config.REGSTR(regs)}"):
-        rom._evaluate_solver(regularizer(r, *regs))
-        save_trained_rom(trainsize, r, regs, rom)
+    logging.info(f"Best regularization for k={trainsize:d}, r={r:d}: "
+                 f"{config.REGSTR(regs)}")
+    return regs
 
 
 def train_minimize(trainsize, r, regs, testsize=None, margin=1.1):
@@ -350,19 +341,15 @@ def train_minimize(trainsize, r, regs, testsize=None, margin=1.1):
     ----------
     trainsize : int
         Number of snapshots to use to train the ROM.
-
     r : int
         Dimension of the desired ROM. Also the number of retained POD modes
         (left singular vectors) used to project the training data.
-
     regs : two positive floats
         Initial guesses for the regularization hyperparameters (non-quadratic,
         quadratic) to use in the Operator Inference least-squares problem
         for training the ROM.
-
     testsize : int
         Number of time steps for which a valid ROM must satisfy the POD bound.
-
     margin : float ≥ 1
         Amount that the integrated POD coefficients of a valid ROM are allowed
         to deviate in magnitude from the maximum magnitude of the training
@@ -439,18 +426,14 @@ def _train_minimize_1D(trainsize, r, regs, testsize=None, margin=1.1):
     ----------
     trainsize : int
         Number of snapshots to use to train the ROM.
-
     r : int
         Dimension of the desired ROM. Also the number of retained POD modes
         (left singular vectors) used to project the training data.
-
     regs : two non-negative floats
         Bounds for the (single) regularization hyperparameter to use in the
         Operator Inference least-squares problem for training the ROM.
-
     testsize : int
         Number of time steps for which a valid ROM must satisfy the POD bound.
-
     margin : float ≥ 1
         Amount that the integrated POD coefficients of a valid ROM are allowed
         to deviate in magnitude from the maximum magnitude of the training
@@ -536,8 +519,8 @@ if __name__ == "__main__":
     group.add_argument("--gridsearch", action="store_true",
                        help="train over the REG3xREG6 grid "
                             "[REG1,REG2]x[REG4,REG5] of regularization "
-                            "hyperparameter candidates, saving only the "
-                            "stable ROM with the least training error")
+                            "hyperparameter candidates, followed by a "
+                            "minimization-based search from the winner")
     group.add_argument("--minimize", action="store_true",
                        help="given initial guesses REG1 (non-quadratic  "
                             "penalizer) and REG2 (quadratic penalizer), use "
@@ -568,8 +551,13 @@ if __name__ == "__main__":
     if args.single:
         train_single(args.trainsize, args.modes, args.regularization)
     elif args.gridsearch:
-        train_gridsearch(args.trainsize, args.modes, args.regularization,
-                         args.testsize, args.margin)
+        regs = train_gridsearch(args.trainsize, args.modes,
+                                args.regularization,
+                                args.testsize, args.margin)
+        if regs is not None:
+            train_minimize(args.trainsize, args.modes, regs,
+                           args.testsize, args.margin)
+
     elif args.minimize:
         train_minimize(args.trainsize, args.modes, args.regularization,
                        args.testsize, args.margin)

@@ -47,37 +47,45 @@ def test_scalers(lifted_data):
     """Test data_processing.scale() and data_processing.unscale(),
     including checking that they are inverses.
     """
-    # Shift the test data (learning the scaling simultaneously).
+    # Shift the test data by the mean profile in a few variables.
+    with utils.timed_block("Shifting snapshots by mean profile"):
+        shifted_data = lifted_data
+        qbar = np.zeros(shifted_data.shape[0])
+        for var in ["p", "T", "xi"]:
+            s = dproc._varslice(var, qbar.size)
+            qbar[s] = np.mean(shifted_data[s], axis=1)
+        shifted_data -= qbar.reshape((-1,1))
+
+    # Scale the test data (learning the scaling simultaneously).
     with utils.timed_block("Scaling lifted test data"):
-        shifted_data, scales = dproc.scale(lifted_data.copy())
+        scaled_data, scales = dproc.scale(shifted_data.copy())
 
     # Verify the scales and that the shift worked for each variable.
     with utils.timed_block("Verifying shift results with scales"):
         for i,v in enumerate(config.ROM_VARIABLES):
             s = slice(i*config.DOF, (i+1)*config.DOF)
             if v in ["p", "T", "xi"]:
-                assert scales[i,0] == np.mean(lifted_data[s])
-            else:
-                assert scales[i,0] == 0
-            assert np.isclose(np.abs(shifted_data[s]).max(), 1)
+                assert np.isclose(np.mean(shifted_data[s]), 0)
+                assert np.isclose(np.mean(scaled_data[s]), 0)
+            assert np.isclose(np.abs(scaled_data[s]).max(), 1)
             if v in config.SPECIES:
-                assert np.isclose(shifted_data[s].min(), 0)
+                assert np.isclose(scaled_data[s].min(), 0)
 
     # Redo the shift with the given scales and compare the results.
     with utils.timed_block("Verifying repeat shift with given scales"):
-        shifted_data2, _ = dproc.scale(lifted_data.copy(), scales)
-        assert np.allclose(shifted_data2, shifted_data)
+        scaled_data2, _ = dproc.scale(shifted_data.copy(), scales)
+        assert np.allclose(scaled_data2, scaled_data)
 
     # Undo the shift and compare the results.
     with utils.timed_block("Verifying inverse scaling"):
-        unshifted_data = dproc.unscale(shifted_data, scales)
-        assert np.allclose(unshifted_data, lifted_data)
+        unscaled_data = dproc.unscale(scaled_data, scales)
+        assert np.allclose(unscaled_data, scaled_data)
 
     # Check the inverse property for a subset of the variables.
     with utils.timed_block("Repeating experiment with nontrivial varindices"):
         variables = np.random.choice(config.ROM_VARIABLES,
                                      size=4, replace=False)
-        subset = np.vstack([dproc.getvar(v, lifted_data) for v in variables])
+        subset = np.vstack([dproc.getvar(v, shifted_data) for v in variables])
         shifted_subset, _ = dproc.scale(subset.copy(), scales, variables)
         unshifted_subset = dproc.unscale(shifted_subset, scales, variables)
         assert np.allclose(unshifted_subset, subset)

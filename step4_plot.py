@@ -56,13 +56,10 @@ def simulate_rom(trainsize, r, regs, steps=None):
     ----------
     trainsize : int
         Number of snapshots used to train the ROM.
-
     r : int
         Dimension of the ROM.
-
-    regs : two or three positive floats
+    regs : 2 or 3 positive floats
         Regularization hyperparameters used to train the ROM.
-
     steps : int or None
         Number of time steps to simulate the ROM.
 
@@ -70,18 +67,13 @@ def simulate_rom(trainsize, r, regs, steps=None):
     -------
     t : (nt,) ndarray
         Time domain corresponding to the ROM outputs.
-
     V : (NUM_ROMVARS*DOF,r) ndarray
         POD basis used to project the training data (and for reconstructing
         the full-order scaled predictions).
-
     qbar : (NUM_ROMVARS*DOF,) ndarray
-        Mean snapshot that the training data was shifted by after scaling
-        but before projection.
-
+        Mean snapshot that the training data was shifted by before scaling.
     scales : (NUM_ROMVARS,4) ndarray
         Information for how the data was scaled. See data_processing.scale().
-
     q_rom : (nt,r) ndarray
         Prediction results from the ROM.
     """
@@ -106,19 +98,14 @@ def get_traces(locs, data, V=None, qbar=None, scales=None):
     ----------
     locs : (l,nt) ndarray
         Index locations for the time traces to extract.
-
     data : (r,nt) or (config.DOF*config.NUM_ROMVARS,nt) ndarray
         Data from which to extract the time traces, either the output of a ROM
         or a high-dimensional data set.
-
     V : (config.DOF*config.NUM_ROMVARS,r) ndarray or None
         Rank-r POD basis. Only needed if `data` is low-dimensional ROM output.
-
     qbar : (NUM_ROMVARS*DOF,) ndarray
-        Mean snapshot that the training data was shifted by after scaling
-        but before projection. Only needed if `data` is low-dimensional ROM
-        output.
-
+        Mean snapshot that the training data was shifted by before scaling.
+        Only needed if `data` is low-dimensional ROM output.
     scales : (config.NUM_ROMVARS,4) ndarray or None
         Information for how the data was scaled (see data_processing.scale()).
         Only needed if `data` is low-dimensional ROM output.
@@ -130,7 +117,7 @@ def get_traces(locs, data, V=None, qbar=None, scales=None):
     """
     if V is not None and qbar is not None and scales is not None:
         qbar = qbar.reshape((-1,1))
-        return dproc.unscale((V[locs] @ data) + qbar[locs,:], scales)
+        return dproc.unscale((V[locs] @ data), scales) + qbar[locs,:]
     else:
         return data[locs]
 
@@ -143,20 +130,15 @@ def get_feature(key, data, V=None, qbar=None, scales=None):
     ----------
     key : str
         Which statistical feature to calculate (T_mean, CH4_sum, etc.)
-
     data : (r,nt) or (DOF*NUM_ROMVARS,nt) ndarray
         Data from which to extract the features, either the output of a ROM
         or a high-dimensional data set.
-
     V : (DOF*NUM_ROMVARS,r) ndarray or None
         Rank-r POD basis. Only needed if data is low-dimensional ROM output.
-
     qbar : (NUM_ROMVARS*DOF,) ndarray
-        Mean snapshot that the training data was shifted by after scaling
-        but before projection. Only needed if `data` is low-dimensional ROM
-        output.
-
-    scales : (NUM_ROMVARS,2) ndarray or None
+        Mean snapshot that the training data was shifted by before scaling.
+        Only needed if `data` is low-dimensional ROM output.
+    scales : (NUM_ROMVARS,) ndarray or None
         Information for how the data was scaled (see data_processing.scale()).
         Only needed if `data` is low-dimensional ROM output.
 
@@ -168,11 +150,11 @@ def get_feature(key, data, V=None, qbar=None, scales=None):
     var, action = key.split('_')
     print(f"{action}({var})", end='..', flush=True)
     if V is not None and qbar is not None and scales is not None:
-        qbar = qbar.reshape((-1,1))
-        data_scaled = (dproc.getvar(var, V) @ data) + dproc.getvar(var, qbar)
-        variable = dproc.unscale(data_scaled, scales, var)
+        qbarvar = dproc.getvar(var, qbar).reshape((-1,1))
+        data_scaled = dproc.getvar(var, V) @ data
+        variable = dproc.unscale(data_scaled, scales, var) + qbarvar
     else:
-        variable = dproc.getvar(var, data)          # noqa
+        variable = dproc.getvar(var, data)
     return eval(f"variable.{action}(axis=0)")
 
 
@@ -187,16 +169,12 @@ def point_traces(trainsize, r, regs, elems, cutoff=60000):
     ----------
     trainsize : int
         Number of snapshots used to train the ROM.
-
     r : int
         Dimension of the ROM.
-
-    regs : two or three positive floats
+    regs : 2 or 3 positive floats
         Regularization hyperparameters used to train the ROM.
-
     elems : list(int) or ndarray(int)
         Indices in the spatial domain at which to compute the point traces.
-
     cutoff : int
         Numer of time steps to plot.
     """
@@ -262,13 +240,10 @@ def errors_in_time(trainsize, r, regs, cutoff=60000):
     ----------
     trainsize : int
         Number of snapshots used to train the ROM.
-
     r : int
         Dimension of the ROM.
-
-    regs : two or three positive floats
+    regs : 2 or 3 positive floats
         Regularization hyperparameters used to train the ROM.
-
     cutoff : int
         Numer of time steps to plot.
     """
@@ -284,8 +259,8 @@ def errors_in_time(trainsize, r, regs, cutoff=60000):
 
     # Shift and project the data (unscaling done later by chunk).
     with utils.timed_block("Projecting GEMS data to POD subspace"):
-        data_scaled, _ = dproc.scale(data_gems.copy(), scales)
-        data_proj = V.T @ (data_scaled - qbar)
+        data_scaled, _ = dproc.scale(data_gems - qbar, scales)
+        data_proj = V.T @ data_scaled
         del data_scaled
 
     # Initialize the figure.
@@ -298,8 +273,8 @@ def errors_in_time(trainsize, r, regs, cutoff=60000):
             Vvar = dproc.getvar(var, V)
             gems_var = dproc.getvar(var, data_gems)
             qbarvar = dproc.getvar(var, qbar)
-            proj_var = dproc.unscale((Vvar @ data_proj) + qbarvar, scales, var)
-            pred_var = dproc.unscale((Vvar @ q_rom) + qbarvar, scales, var)
+            proj_var = dproc.unscale(Vvar @ data_proj, scales, var) + qbarvar
+            pred_var = dproc.unscale(Vvar @ q_rom, scales, var) + qbarvar
 
         with utils.timed_block(f"Calculating error in {var}"):
             denom = np.abs(gems_var).max(axis=0)
@@ -386,11 +361,9 @@ def spatial_statistics(trainsize, r, regs):
     ----------
     trainsize : int
         Number of snapshots used to train the ROM.
-
     r : int
         Dimension of the ROM.
-
-    regs : two or three positive floats
+    regs : 2 or 3 positive floats
         Regularization hyperparameters used to train the ROM.
     """
     # Load the true results.
@@ -445,13 +418,10 @@ def main(trainsize, r, regs, elems=None, plotPointTrace=False,
     ----------
     trainsize : int
         Number of snapshots used to train the ROM.
-
     r : int
         Dimension of the ROM.
-
     regs : two positive floats
         Regularization hyperparameters used to train the ROM.
-
     elems : list(int) or ndarray(int)
         Indices in the spatial domain at which to compute time traces.
     """

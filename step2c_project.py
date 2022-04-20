@@ -38,10 +38,8 @@ def project_and_save_data(Q, t, V):
     ----------
     Q : (NUM_ROMVARS*DOF,trainsize) ndarray
         Preprocessed snapshot data to be projected.
-
     t : (trainsize,) ndarray
         Time domain corresponding to the snapshots.
-
     V : (NUM_ROMVARS*DOF,r) ndarray
         POD basis of rank r.
 
@@ -49,7 +47,6 @@ def project_and_save_data(Q, t, V):
     -------
     Q_ : (r,trainsize) ndarray
         Projected snapshots.
-
     Qdot_ : (r,trainsize) ndarray
         Time derivatives of projected snapshots.
     """
