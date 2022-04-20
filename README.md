@@ -8,7 +8,7 @@
 # Reduced-order Modeling via Operator Inference for 2D Combustion
 
 <p align="center">
-    <img src="https://github.com/github.com/Willcox-Research-Group/ROM-OpInf-Combustion-2D/blob/images/readme.gif" width="700">
+    <img src="https://github.com/Willcox-Research-Group/ROM-OpInf-Combustion-2D/blob/images/readme.gif" width="700">
 </p>
 
 This repository is an extensive example of **Operator Inference**, a data-driven procedure for reduced-order modeling, applied to a two-dimensional single-injector combustion problem.
