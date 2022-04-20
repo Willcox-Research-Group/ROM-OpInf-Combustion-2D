@@ -1,0 +1,13 @@
+*
+*.*
+!README.md
+
+# Only allow figures and videos
+!*.svg
+!*.pdf
+!*.jpeg
+!*.png
+!*.mp4
+!*.mov
+!*.gif
+
