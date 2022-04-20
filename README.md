@@ -1,14 +1,14 @@
 [![License](https://img.shields.io/github/license/Willcox-Research-Group/ROM-OpInf-Combustion-2D)](./LICENSE)
 [![Top language](https://img.shields.io/github/languages/top/Willcox-Research-Group/ROM-OpInf-Combustion-2D)](https://www.python.org)
 ![Code size](https://img.shields.io/github/languages/code-size/Willcox-Research-Group/ROM-OpInf-Combustion-2D)
-[![Latest commit](https://img.shields.io/github/last-commit/Willcox-Research-Group/ROM-OpInf-Combustion-2D)](https://github.com/Willcox-Research-Group/ROM-OpInf-Combustion-2D/commits/master)
+[![Latest commit](https://img.shields.io/github/last-commit/Willcox-Research-Group/ROM-OpInf-Combustion-2D)](https://github.com/Willcox-Research-Group/ROM-OpInf-Combustion-2D/commits/main)
 [![Documentation](https://img.shields.io/badge/Documentation-WIKI-important)](https://github.com/Willcox-Research-Group/ROM-OpInf-Combustion-2D/wiki)
 <!-- [![Issues](https://img.shields.io/github/issues/Willcox-Research-Group/ROM-OpInf-Combustion-2D)](https://github.com/Willcox-Research-Group/ROM-OpInf-Combustion-2D/issues) -->
 
 # Reduced-order Modeling via Operator Inference for 2D Combustion
 
 <p align="center">
-    <img src="https://drive.google.com/uc?export=view&id=1TbIfBQW-YYXVydBFC0McJaSFjkvaeLvA" width="700">
+    <img src="https://github.com/github.com/Willcox-Research-Group/ROM-OpInf-Combustion-2D/blob/images/readme.gif" width="700">
 </p>
 
 This repository is an extensive example of **Operator Inference**, a data-driven procedure for reduced-order modeling, applied to a two-dimensional single-injector combustion problem.
