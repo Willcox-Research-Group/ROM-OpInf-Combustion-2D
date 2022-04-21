@@ -111,7 +111,7 @@ def U(t):
 
 # Matplotlib plot customization -----------------------------------------------
 
-plt.rc("figure", dpi=1200)                  # High-quality figures.
+plt.rc("figure", dpi=300)                   # High-quality figures.
 plt.rc("text", usetex=True)                 # Use LaTeX fonts.
 plt.rc("font", family="serif")              # Serif axis labels.
 plt.rc("legend", edgecolor="none",          # No borders around legends.
@@ -154,6 +154,7 @@ GEMS_STYLE = dict(linestyle="-",            # Line style for GEMS time traces.
 ROM_STYLE = dict(linestyle="--",            # Line style for ROM time traces.
                  color="C0",                # Line color for ROM time traces.
                  label="ROM")               # Line label for ROM time traces.
+
 
 # =============================================================================
 # DO NOT MODIFY ===============================================================
@@ -315,9 +316,9 @@ for d,label in zip([VARTITLES, VARUNITS], ["VARTITLES", "VARUNITS"]):
         raise KeyError(f"{label}.keys() != ROM_VARIABLES")
 
 # Check that the base folder exists.
+BASE_FOLDER = os.path.abspath(BASE_FOLDER)
 if not os.path.exists(BASE_FOLDER):
     raise NotADirectoryError(BASE_FOLDER + " (set config.BASE_FOLDER)")
-BASE_FOLDER = os.path.abspath(BASE_FOLDER)
 
 
 # Initialize default logger ---------------------------------------------------

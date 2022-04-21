@@ -4,6 +4,7 @@ import os
 import sys
 import h5py
 import time
+import signal
 import logging
 import numpy as np
 import matplotlib.pyplot as plt
@@ -35,7 +36,10 @@ def reset_logger(trainsize=None):
         logger.removeHandler(hdlr)
 
     # Get the log filename and append a newline.
-    log_filename = config.log_path(trainsize)
+    if trainsize == "euler":
+        log_filename = config.EULER_LOG
+    else:
+        log_filename = config.log_path(trainsize)
     with open(log_filename, 'a') as lf:
         lf.write('\n')
 
@@ -60,33 +64,68 @@ def reset_logger(trainsize=None):
 class timed_block:
     """Context manager for timing a block of code and reporting the timing.
 
-    >>> with timed_operation("This is a test"):
+    >>> with timed_block("This is a test"):
     ...     # Code to be timed
     ...     time.sleep(2)
     ...
     This is a test...done in 2.00 s.
+
+    >>> with timed_block("Another test", timelimit=3):
+    ...     # Code to be timed and halted within the specified time limit.
+    ...     i = 0
+    ...     while True:
+    ...         i += 1
+    Another test...TIMED OUT after 3.00 s.
     """
-    def __init__(self, message):
-        """Store message."""
+    verbose = True
+
+    @staticmethod
+    def _signal_handler(signum, frame):
+        raise TimeoutError("timed out!")
+
+    @property
+    def timelimit(self):
+        """Time limit (in seconds) for the block to complete."""
+        return self._timelimit
+
+    def __init__(self, message, timelimit=None):
+        """Store print/log message."""
         self.message = message
+        self._end = '\n' if '\r' not in message else ''
+        self._timelimit = timelimit
 
     def __enter__(self):
         """Print the message and record the current time."""
-        print(f"{self.message}...", end='', flush=True)
-        self.start = time.time()
+        if self.verbose:
+            print(f"{self.message}...", end='', flush=True)
+        self._tic = time.time()
+        if self._timelimit is not None:
+            signal.signal(signal.SIGALRM, self._signal_handler)
+            signal.alarm(self._timelimit)
+        return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
         """Calculate and report the elapsed time."""
-        self.end = time.time()
-        elapsed = self.end - self.start
+        self._toc = time.time()
+        if self._timelimit is not None:
+            signal.alarm(0)
+        elapsed = self._toc - self._tic
         if exc_type:    # Report an exception if present.
+            if self._timelimit is not None and exc_type is TimeoutError:
+                print(f"TIMED OUT after {elapsed:.2f} s.",
+                      flush=True, end=self._end)
+                logging.info(f"TIMED OUT after {elapsed:.2f} s.")
+                return True
             print(f"{exc_type.__name__}: {exc_value}")
             logging.info(self.message.strip())
             logging.error(f"({exc_type.__name__}) {exc_value} "
                           f"(raised after {elapsed:.6f} s)")
         else:           # If no exception, report execution time.
-            print(f"done in {elapsed:.2f} s.", flush=True)
+            if self.verbose:
+                print(f"done in {elapsed:.2f} s.", flush=True, end=self._end)
             logging.info(f"{self.message.strip()}...done in {elapsed:.6f} s.")
+        self.elapsed = elapsed
+        return
 
 
 # Data loaders ================================================================
