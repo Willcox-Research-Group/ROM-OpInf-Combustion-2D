@@ -329,3 +329,30 @@ _handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
 _handler.setLevel(logging.INFO)
 _logger.setLevel(logging.INFO)
 _logger.addHandler(_handler)
+
+
+# Euler configuration =========================================================
+
+EULER_FOLDER = "/storage1/euler1D"              # Base folder for 1D Euler data.
+EULER_SNAPSHOT_DATA = "euler_snapshots.h5"      # Full-order snapshot data.
+EULER_RESULTS = "results.h5"                    # OpInf results.
+
+
+def NOSFMT(level):
+    """Format for noise level label (folder names)."""
+    return f"noise{level*100:0>7.4f}".replace('.', '-')
+
+
+EULER_DOMAIN = dict(nx=200, nt=3000, L=2, tf=3e-2, gamma=1.4)
+
+plt.rc("animation", html="jshtml")              # For notebook animations.
+
+# Check that the base Euler folder exists.
+EULER_FOLDER = os.path.abspath(EULER_FOLDER)
+if not os.path.exists(EULER_FOLDER):
+    raise NotADirectoryError(EULER_FOLDER + " (set config.BASE_FOLDER)")
+
+# Prepend base Euler folder to other data files.
+EULER_SNAPSHOT_DATA = os.path.join(EULER_FOLDER, EULER_SNAPSHOT_DATA)
+EULER_RESULTS = os.path.join(EULER_FOLDER, EULER_RESULTS)
+EULER_LOG = os.path.join(EULER_FOLDER, LOG_FILE)
