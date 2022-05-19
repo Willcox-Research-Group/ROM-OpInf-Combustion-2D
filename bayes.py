@@ -260,7 +260,7 @@ def simulate_posterior(post, q0, t, input_func=None, ndraws=10):
         Results of integrating the mean ROM.
     q_roms : list(ndraws (r,k) ndarrays)
         Results of integrating ndraws ROMs from the posterior distribution.
-   """
+    """
     # Simulate the mean ROM as a reference.
     with utils.timed_block("Simulating mean ROM"):
         q_rom_mean = post.mean_rom.predict(q0, t, input_func, method="RK45")
@@ -281,4 +281,3 @@ def simulate_posterior(post, q0, t, input_func=None, ndraws=10):
         logging.info(message)
 
     return q_rom_mean, q_roms
-
