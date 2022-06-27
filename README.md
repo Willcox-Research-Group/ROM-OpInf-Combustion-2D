@@ -13,7 +13,7 @@
 
 This repository is an extensive example of **Operator Inference**, a data-driven procedure for reduced-order modeling, applied to a two-dimensional single-injector combustion problem.
 The following branches are the source code for publications that use this example (see [**References**](#references) below).
-- [**`bayes`**](https://github.com/Willcox-Research-Group/ROM-OpInf-Combustion-2D/tree/jrsnz2021) is the source code of the paper [_Bayesian operator inference for data-driven reduced-order modeling_](https://arxiv.org/abs/2204.10829) by Guo, McQuarrie, and Willcox.
+- [**`bayes`**](https://github.com/Willcox-Research-Group/ROM-OpInf-Combustion-2D/tree/bayes) is the source code of the paper [_Bayesian operator inference for data-driven reduced-order modeling_](https://arxiv.org/abs/2204.10829) by Guo, McQuarrie, and Willcox.
 - [**`aiaape2021`**](https://github.com/Willcox-Research-Group/ROM-OpInf-Combustion-2D/tree/aiaape2021) is the source code for the paper [_Performance comparison of data-driven reduced models for a single-injector combustion process_](https://arc.aiaa.org/doi/abs/10.2514/6.2021-3633) by Jain, McQuarrie, and Kramer.
 - [**`jrsnz2021`**](https://github.com/Willcox-Research-Group/ROM-OpInf-Combustion-2D/tree/jrsnz2021) is the source code for the paper [_Data-driven reduced-order models via regularised operator inference for a single-injector combustion process_](https://www.tandfonline.com/doi/full/10.1080/03036758.2020.1863237) by McQuarrie, Huang, and Willcox.
 
